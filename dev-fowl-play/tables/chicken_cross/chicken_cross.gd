@@ -25,7 +25,7 @@ func _on_table_ready() -> void:
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = Color(0.25, 0.25, 0.3) if i % 2 == 0 else Color(0.4, 0.4, 0.45)
 		tile.material_override = mat
-		tile.position = slot_position(i) + Vector3(0, 0.01, 0)
+		tile.position = slot_position(i) + Vector3(0, 0.04, 0)
 		$Road.add_child(tile)
 	chicken.position = slot_position(0) + CHICKEN_REST
 	$Buttons/ProceedButton.pressed.connect(_on_proceed_pressed)

@@ -17,7 +17,7 @@ size = Vector3(3, 0.9, 1.6)
 script = ExtResource("1_e071p")
 
 [node name="Counter" type="MeshInstance3D" parent="." unique_id=953748651]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.000672698, 0.4772557, -0.012233496)
 material_override = SubResource("StandardMaterial3D_v5vuv")
 mesh = SubResource("BoxMesh_g4v7s")
 

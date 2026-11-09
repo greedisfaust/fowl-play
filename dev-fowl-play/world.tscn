@@ -1,0 +1,115 @@
+[gd_scene format=3 uid="uid://6ksjly75m5pk"]
+
+[ext_resource type="Script" uid="uid://boyxfojgaqe8t" path="res://world.gd" id="1_tlwt5"]
+[ext_resource type="PackedScene" uid="uid://dap7heusvq3fc" path="res://ui/hud.tscn" id="2_aqk2v"]
+[ext_resource type="PackedScene" uid="uid://1vkhxbv1uo10" path="res://tables/chicken_cross/chicken_cross.tscn" id="3_036b0"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_57qmd"]
+
+[sub_resource type="Sky" id="Sky_yf5fn"]
+sky_material = SubResource("ProceduralSkyMaterial_57qmd")
+
+[sub_resource type="Environment" id="Environment_g4v7s"]
+background_mode = 2
+sky = SubResource("Sky_yf5fn")
+ambient_light_source = 3
+tonemap_mode = 2
+glow_enabled = true
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_v5vuv"]
+albedo_color = Color(0.16862746, 0.1764706, 0.25882354, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_g4v7s"]
+size = Vector3(30, 1, 30)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_g4v7s"]
+size = Vector3(30, 1, 30)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_tlwt5"]
+albedo_color = Color(0.8509804, 0.78039217, 0.6392157, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_aqk2v"]
+albedo_color = Color(0.92941177, 0.8901961, 0.8156863, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_036b0"]
+albedo_color = Color(0.92941177, 0.8901961, 0.8156863, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dwbse"]
+albedo_color = Color(0.92941177, 0.8901961, 0.8156863, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pkg7o"]
+albedo_color = Color(0.92941177, 0.8901961, 0.8156863, 1)
+
+[node name="World" type="Node3D" unique_id=477242409]
+script = ExtResource("1_tlwt5")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=700896886]
+transform = Transform3D(1, 0, 0, 0, 0.7071068, 0.7071068, 0, -0.7071068, 0.7071068, 0, 0, 0)
+
+[node name="HUD" parent="." unique_id=234827813 instance=ExtResource("2_aqk2v")]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=239029439]
+environment = SubResource("Environment_g4v7s")
+
+[node name="Players" type="Node3D" parent="." unique_id=1080641893]
+
+[node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="." unique_id=437796381]
+_spawnable_scenes = PackedStringArray("uid://bj0yo0ekojx8d")
+spawn_path = NodePath("../Players")
+
+[node name="Casino" type="Node3D" parent="." unique_id=408274655]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 100, 0, 0)
+
+[node name="Floor" type="MeshInstance3D" parent="Casino" unique_id=570292208]
+material_override = SubResource("StandardMaterial3D_v5vuv")
+mesh = SubResource("BoxMesh_g4v7s")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Casino/Floor" unique_id=1101333688]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Casino/Floor/StaticBody3D" unique_id=767367766]
+shape = SubResource("BoxShape3D_g4v7s")
+
+[node name="ChickenCross" parent="Casino" unique_id=118357172 instance=ExtResource("3_036b0")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
+
+[node name="Spawn" type="Marker3D" parent="Casino" unique_id=48755010]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 2)
+
+[node name="Apartment" type="Node3D" parent="." unique_id=694171853]
+
+[node name="Floor" type="CSGBox3D" parent="Apartment" unique_id=341239197]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
+material_override = SubResource("StandardMaterial3D_tlwt5")
+use_collision = true
+size = Vector3(12, 0.2, 12)
+
+[node name="WallN" type="CSGBox3D" parent="Apartment" unique_id=735757054]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -6)
+material_override = SubResource("StandardMaterial3D_aqk2v")
+use_collision = true
+size = Vector3(12, 3, 0.2)
+
+[node name="WallS" type="CSGBox3D" parent="Apartment" unique_id=1447177250]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 6)
+material_override = SubResource("StandardMaterial3D_036b0")
+use_collision = true
+size = Vector3(12, 3, 0.2)
+
+[node name="WallE" type="CSGBox3D" parent="Apartment" unique_id=92483983]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 1.5, 0)
+material_override = SubResource("StandardMaterial3D_dwbse")
+use_collision = true
+size = Vector3(0.2, 3, 12)
+
+[node name="WallW" type="CSGBox3D" parent="Apartment" unique_id=760298657]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 1.5, 0)
+material_override = SubResource("StandardMaterial3D_pkg7o")
+use_collision = true
+size = Vector3(0.2, 3, 12)
+
+[node name="OmniLight3D" type="OmniLight3D" parent="Apartment" unique_id=1130347266]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, 0)
+omni_range = 14.0
+
+[node name="Spawn" type="Marker3D" parent="Apartment" unique_id=1390870382]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)

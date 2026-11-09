@@ -23,7 +23,7 @@ func _on_time_changed(seconds_left: int) -> void:
 	timer_label.text = "%d:%02d" % [floori(seconds_left / 60.0), seconds_left % 60]
 
 func _on_round_started(player_id: int, table: String, bet: int) -> void:
-	announce("Player %d bet $%d on %s!" % [player_id, bet, table])
+	announce("%s bet $%d on %s!" % [Network.player_name(player_id), bet, table])
 
 func announce(text: String) -> void:
 	_announce_id += 1
@@ -33,3 +33,4 @@ func announce(text: String) -> void:
 	await get_tree().create_timer(2.5).timeout
 	if my_id == _announce_id:
 		announcer.hide()
+		
