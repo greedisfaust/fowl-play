@@ -21,6 +21,7 @@ func get_total_bet() -> int:
 	return bet
 
 func _ready() -> void:
+	add_to_group("tables")
 	$BetPanel.key_pressed.connect(_on_bet_key)
 	if uses_play_button:
 		$Buttons/PlayButton.pressed.connect(_on_play_pressed)

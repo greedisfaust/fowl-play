@@ -15,6 +15,7 @@ func _ready() -> void:
 	_on_wallet_changed(GameState.wallet)
 	_on_time_changed(ceili(GameState.time_left))
 	announcer.hide()
+	GameState.quota_changed.connect(func(q: int) -> void: quota_label.text = "Quota: $%d" % q)
 
 func _on_wallet_changed(value: int) -> void:
 	wallet_label.text = "$%d" % value

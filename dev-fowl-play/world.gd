@@ -20,6 +20,11 @@ func _ready() -> void:
 	$Apartment/LobbyConsole.leave_pressed.connect(_on_leave_pressed)
 	var door: DoorZone = $Apartment/DoorZone
 	door.countdown_finished.connect(_on_countdown_finished)
+	GameState.day_ended.connect(_on_day_ended)
+	GameState.day_result.connect(_on_day_result)
+	GameState.phase_changed.connect(_refresh_board)
+	GameState.quota_changed.connect(func(_q: int) -> void: _refresh_board())
+	GameState.wallet_changed.connect(func(_w: int) -> void: _refresh_board())
 	door.count_changed.connect(_on_count_changed)
 	
 	_spawn_player(1)
@@ -115,7 +120,8 @@ func _refresh_board() -> void:
 			if Network.players[id] == slot:
 				line = "%d  %s" % [slot, Network.player_name(id)]
 		lines.append(line)
-	$Apartment/PlayerBoard.set_text("\n".join(lines), "PLAYERS IN LOBBY")
+	var life := "EXTRA LIFE: YES" if GameState.extra_life else "EXTRA LIFE: NO"
+	$Apartment/PlayerBoard.set_text("\n".join(lines), "DAY %d   WALLET $%d\nQUOTA $%d   %s" % [GameState.day, GameState.wallet, GameState.quota, life])
 	
 func _on_countdown_finished() -> void:
 	if not multiplayer.is_server():
@@ -129,6 +135,36 @@ func _on_countdown_finished() -> void:
 			var dest: Vector3 = $Casino/Spawn.global_position + Vector3((slot - 2.5) * 1.0, 0, 0)
 			player.teleport_to.rpc_id(id, dest)
 	GameState.start_day()
+	
+func _on_day_ended() -> void:
+	if not multiplayer.is_server():
+		return
+	# let any round in progress finish so its payout isn't lost
+	while get_tree().get_nodes_in_group("tables").any(func(t: Node) -> bool: return t.running):
+		await get_tree().create_timer(0.25).timeout
+	GameState.end_day()
+	_return_to_apartment()
+
+func _return_to_apartment() -> void:
+	for id in Network.players:
+		var player = $Players.get_node_or_null(str(id))
+		if player:
+			var slot: int = Network.players[id]
+			var dest: Vector3 = $Apartment/Spawn.global_position + Vector3((slot - 2.5) * 1.0, 0, 0)
+			player.teleport_to.rpc_id(id, dest)
+	$Apartment/DoorZone.enabled = true
+	multiplayer.multiplayer_peer.refuse_new_connections = false
+
+func _on_day_result(outcome: int, finished_day: int) -> void:
+	match outcome:
+		GameState.Outcome.PASSED:
+			$HUD.announce("DAY %d COMPLETE! QUOTA MET" % finished_day)
+		GameState.Outcome.EXTRA_LIFE_SPENT:
+			$HUD.announce("QUOTA MISSED! EXTRA LIFE SPENT")
+		GameState.Outcome.GAME_OVER:
+			$HUD.announce("GAME OVER. THE HOUSE WINS")
+		GameState.Outcome.WON:
+			$HUD.announce("CONTRACT VOIDED! YOU WIN")
 
 func _on_count_changed(s: int) -> void:
 	if s > 0:
