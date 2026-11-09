@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://ckfabxbl2tc7x"]
+
+[ext_resource type="Script" uid="uid://cxuvytefabgr8" path="res://lobby/text_terminal.gd" id="1_ilsmg"]
+[ext_resource type="PackedScene" uid="uid://yts8y1ieyhvd" path="res://tables/screen_3d.tscn" id="1_so3bm"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_yf5fn"]
+size = Vector3(0.9, 0.5, 0.1)
+
+[node name="TextTerminal" type="StaticBody3D" unique_id=368827690]
+script = ExtResource("1_ilsmg")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=896446130]
+shape = SubResource("BoxShape3D_yf5fn")
+
+[node name="Screen" parent="." unique_id=1645846508 instance=ExtResource("1_so3bm")]
+panel_size = Vector2(0.9, 0.5)
+text_color = Color(0.49019608, 0.9764706, 0.7607843, 1)
+big_font_size = 64
+caption_font_size = 24

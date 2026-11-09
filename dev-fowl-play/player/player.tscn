@@ -43,3 +43,9 @@ mesh = SubResource("BoxMesh_g4v7s")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
 material_override = SubResource("StandardMaterial3D_yf5fn")
 mesh = SubResource("CapsuleMesh_g4v7s")
+
+[node name="NamePlate" type="Label3D" parent="." unique_id=71920449]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.1, 0)
+billboard = 1
+font_size = 48
+outline_size = 6

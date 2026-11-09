@@ -12,6 +12,10 @@ const MOUSE_SENS := 0.003
 var _net_pos := Vector3.ZERO
 var _net_yaw := 0.0
 var _net_pitch := 0.0
+var input_locked := false
+
+func _update_nameplate() -> void:
+	$NamePlate.text = Network.player_name(str(name).to_int())
 
 func _enter_tree() -> void:
 	set_multiplayer_authority(str(name).to_int())
@@ -22,12 +26,19 @@ func _ready() -> void:
 	$Body.visible = not mine
 	$Head/Beak.visible = not mine
 	ray.add_exception(self)
+	if Style.font:
+		$NamePlate.font = Style.font
+	$NamePlate.visible = not mine
+	Network.players_changed.connect(_update_nameplate)
+	_update_nameplate()
 	_net_pos = position
 	if mine:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
+		return
+	if input_locked:
 		return
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -51,6 +62,15 @@ func _try_interact() -> void:
 	if target and target.has_method("interact"):
 		target.interact(self)
 
+@rpc("any_peer", "call_local", "reliable")
+func teleport_to(pos: Vector3) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if sender != 0 and sender != 1:
+		return   # only the host may move players
+	position = pos
+	velocity = Vector3.ZERO
+	_net_pos = pos
+
 func _physics_process(delta: float) -> void:
 	if not is_multiplayer_authority():
 		position = position.lerp(_net_pos, 0.3)
@@ -58,11 +78,11 @@ func _physics_process(delta: float) -> void:
 		head.rotation.x = lerpf(head.rotation.x, _net_pitch, 0.3)
 		return
 	if is_on_floor():
-		if Input.is_action_just_pressed("jump"):
+		if Input.is_action_just_pressed("jump") and not input_locked:
 			velocity.y = JUMP_VELOCITY
 	else:
 		velocity.y -= GRAVITY * delta
-	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	var input_dir := Vector2.ZERO if input_locked else Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
 	velocity.x = direction.x * SPEED
 	velocity.z = direction.z * SPEED

@@ -5,6 +5,7 @@ signal time_changed(seconds_left: int)
 @warning_ignore("unused_signal")
 signal round_started(player_id: int, table: String, bet: int)
 signal day_ended
+signal phase_changed
 
 # TEMP test values: replace with your economy numbers
 const START_WALLET := 1000
@@ -17,6 +18,8 @@ var day: int = 1
 var time_left: float = DAY_LENGTH
 var running := false
 var ledger: Array = []
+enum Phase { REST, DAY }
+var phase := Phase.REST
 
 var max_bet_cap: int:
 	get:
@@ -55,10 +58,13 @@ func start_day() -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _begin_day() -> void:
+	phase = Phase.DAY
 	time_left = DAY_LENGTH
 	running = true
+	phase_changed.emit()
 	wallet_changed.emit(wallet)
 	time_changed.emit(ceili(time_left))
+	
 
 func try_spend(amount: int) -> bool:
 	if not multiplayer.is_server() or amount <= 0 or amount > wallet:

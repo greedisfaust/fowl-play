@@ -67,8 +67,16 @@ func _add_glass() -> void:
 func set_text(big: String, small: String = "") -> void:
 	big_text.text = big
 	caption.text = small
-	var fit := int(panel_size.x * 0.9 / (maxi(big.length(), 1) * 0.55 * big_text.pixel_size))
-	big_text.font_size = mini(big_font_size, fit)
+	var longest := 1
+	for line in big.split("\n"):
+		longest = maxi(longest, line.length())
+	var fit := int(panel_size.x * 0.9 / (longest * 0.55 * big_text.pixel_size))
+	big_text.font_size = maxi(int(mini(big_font_size, fit) * Style.text_scale), 8)
+	var cap_longest := 1
+	for line in small.split("\n"):
+		cap_longest = maxi(cap_longest, line.length())
+	var cap_fit := int(panel_size.x * 0.92 / (cap_longest * 0.55 * caption.pixel_size))
+	caption.font_size = maxi(int(mini(caption_font_size, cap_fit) * Style.text_scale), 8)
 
 func set_color(c: Color) -> void:
 	big_text.modulate = c

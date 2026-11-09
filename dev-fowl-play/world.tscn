@@ -3,6 +3,10 @@
 [ext_resource type="Script" uid="uid://boyxfojgaqe8t" path="res://world.gd" id="1_tlwt5"]
 [ext_resource type="PackedScene" uid="uid://dap7heusvq3fc" path="res://ui/hud.tscn" id="2_aqk2v"]
 [ext_resource type="PackedScene" uid="uid://1vkhxbv1uo10" path="res://tables/chicken_cross/chicken_cross.tscn" id="3_036b0"]
+[ext_resource type="PackedScene" uid="uid://ckfabxbl2tc7x" path="res://lobby/text_terminal.tscn" id="4_aqk2v"]
+[ext_resource type="PackedScene" uid="uid://yts8y1ieyhvd" path="res://tables/screen_3d.tscn" id="4_dwbse"]
+[ext_resource type="PackedScene" uid="uid://datx111tb4hvp" path="res://lobby/lobby_console.tscn" id="5_036b0"]
+[ext_resource type="Script" uid="uid://dxq2gd552byl5" path="res://lobby/door_zone.gd" id="7_pkg7o"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_57qmd"]
 
@@ -39,6 +43,22 @@ albedo_color = Color(0.92941177, 0.8901961, 0.8156863, 1)
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pkg7o"]
 albedo_color = Color(0.92941177, 0.8901961, 0.8156863, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_yf5fn"]
+size = Vector3(6, 4, 5.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_d0u6y"]
+transparency = 1
+albedo_color = Color(0.2, 1, 0.4, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_57qmd"]
+size = Vector3(6, 0.02, 5.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gbfbk"]
+albedo_color = Color(0.41960785, 0.26666668, 0.13725491, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_d0u6y"]
+size = Vector3(1.7, 2.72, 0.033)
 
 [node name="World" type="Node3D" unique_id=477242409]
 script = ExtResource("1_tlwt5")
@@ -77,6 +97,21 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 2)
 
 [node name="Apartment" type="Node3D" parent="." unique_id=694171853]
 
+[node name="PlayerBoard" parent="Apartment" unique_id=1645846508 instance=ExtResource("4_dwbse")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 5.87, 1.6, 0)
+panel_size = Vector2(1.4, 1)
+text_color = Color(1, 1, 1, 1)
+big_font_size = 44
+
+[node name="JoinTerminal" parent="Apartment" unique_id=368827690 instance=ExtResource("4_aqk2v")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.8, 1.3, -5.8)
+title = "JOIN: HOST IP"
+max_length = 15
+allowed_chars = "0123456789."
+
+[node name="LobbyConsole" parent="Apartment" unique_id=853988978 instance=ExtResource("5_036b0")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.4, -5.86)
+
 [node name="Floor" type="CSGBox3D" parent="Apartment" unique_id=341239197]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
 material_override = SubResource("StandardMaterial3D_tlwt5")
@@ -113,3 +148,32 @@ omni_range = 14.0
 
 [node name="Spawn" type="Marker3D" parent="Apartment" unique_id=1390870382]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
+
+[node name="NicknameTerminal" parent="Apartment" unique_id=499022950 instance=ExtResource("4_aqk2v")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 1.3, -5.8)
+
+[node name="DoorZone" type="Area3D" parent="Apartment" unique_id=1971322862]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 4.9)
+script = ExtResource("7_pkg7o")
+
+[node name="Sign" parent="Apartment/DoorZone" unique_id=1464748678 instance=ExtResource("4_dwbse")]
+transform = Transform3D(-1, 2.262668e-08, 8.444392e-08, 0, 0.9659258, -0.25881904, -8.742278e-08, -0.25881904, -0.9659258, 0, 2.6, 0.65)
+panel_size = Vector2(2.2, 1.25)
+text_color = Color(1, 0, 0.3019608, 1)
+big_font_size = 100
+caption_font_size = 26
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Apartment/DoorZone" unique_id=1627439020]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -1.5)
+shape = SubResource("BoxShape3D_yf5fn")
+
+[node name="Pad" type="MeshInstance3D" parent="Apartment/DoorZone" unique_id=1500424780]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.99, -1.5)
+material_override = SubResource("StandardMaterial3D_d0u6y")
+transparency = 0.35
+mesh = SubResource("BoxMesh_57qmd")
+
+[node name="DoorSlab" type="MeshInstance3D" parent="Apartment" unique_id=169231682]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3601395, 5.873535)
+material_override = SubResource("StandardMaterial3D_gbfbk")
+mesh = SubResource("BoxMesh_d0u6y")
