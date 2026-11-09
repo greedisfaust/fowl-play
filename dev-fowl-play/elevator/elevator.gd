@@ -6,14 +6,14 @@ signal ride_requested   # host only: everyone aboard, unlocked, button pressed
 const SCREEN_SCENE := preload("res://tables/screen_3d.tscn")
 const BUTTON_SCENE := preload("res://tables/press_button.tscn")
 
-const CAB := Vector3(3.0, 2.6, 3.0)   # inside size: x width, y height, z depth
+const CAB := Vector3(7.5, 2.8, 7.5)   # inside size
 const WALL := 0.2
-const OPENING := 1.6                  # door opening width
-const OPEN_H := 2.0                   # door opening height
-const DOOR_TIME := 1.2
-const DOOR_OPEN_X := 1.08
-const DOOR_CLOSED_X := 0.4
-const SPOTS := [Vector2(-0.7, -0.6), Vector2(0.7, -0.6), Vector2(-0.7, 0.5), Vector2(0.7, 0.5)]
+const OPENING := 2.4
+const OPEN_H := 2.2
+const DOOR_TIME := 1.5
+const DOOR_CLOSED_X := OPENING / 4.0
+const DOOR_OPEN_X := OPENING * 0.75 + 0.02
+const SPOTS := [Vector2(-1.5, -1.2), Vector2(1.5, -1.2), Vector2(-1.5, 0.8), Vector2(1.5, 0.8)]
 
 const RED := Color(1.0, 0.25, 0.25)
 const AMBER := Color(1.0, 0.8, 0.2)
@@ -48,8 +48,8 @@ func _ready() -> void:
 	_build_cab()
 	_door_l = _make_door(-DOOR_CLOSED_X)
 	_door_r = _make_door(DOOR_CLOSED_X)
-	_screen_out = _make_screen(Vector2(2.6, 0.7), 64, 24, Vector3(0, 2.4, CAB.z / 2.0 + WALL + 0.02))
-	_screen_in = _make_screen(Vector2(1.5, 0.6), 48, 18, Vector3(0, 1.95, -CAB.z / 2.0 + 0.02))
+	_screen_out = _make_screen(Vector2(3.2, 0.7), 64, 24, Vector3(0, OPEN_H + 0.4, CAB.z / 2.0 + WALL + 0.02))
+	_screen_in = _make_screen(Vector2(2.4, 0.8), 56, 22, Vector3(0, 2.1, -CAB.z / 2.0 + 0.02))
 	_build_button()
 	_build_zone()
 	Network.players_changed.connect(_check)
@@ -81,25 +81,28 @@ func _build_cab() -> void:
 	var w := CAB.x + WALL * 2.0
 	var front_z := (CAB.z + WALL) / 2.0
 	var piece_w := (w - OPENING) / 2.0
-	_add_box(Vector3(CAB.x, 0.02, CAB.z), Vector3(0, 0.01, 0), CARPET_COLOR, false)   # carpet
-	_add_box(Vector3(w, WALL, CAB.z + WALL * 2.0), Vector3(0, CAB.y + WALL / 2.0, 0), Color(0.18, 0.12, 0.12))   # ceiling
+	_add_box(Vector3(CAB.x, 0.02, CAB.z), Vector3(0, 0.01, 0), CARPET_COLOR)   # carpet, now solid (the apartment cab sits past the floor)
+	_add_box(Vector3(OPENING, 0.02, WALL), Vector3(0, 0.01, front_z), BRASS)   # threshold plate in the doorway
+	_add_box(Vector3(CAB.x, WALL, CAB.z), Vector3(0, CAB.y + WALL / 2.0, 0), Color(0.18, 0.12, 0.12))   # ceiling, between the walls
 	_add_box(Vector3(w, h, WALL), Vector3(0, h / 2.0, -front_z), WALL_COLOR)   # back wall
 	for sx in [-1.0, 1.0]:
 		_add_box(Vector3(WALL, h, CAB.z), Vector3(sx * (CAB.x + WALL) / 2.0, h / 2.0, 0), WALL_COLOR)   # side walls
 		_add_box(Vector3(piece_w, h, WALL), Vector3(sx * (OPENING / 2.0 + piece_w / 2.0), h / 2.0, front_z), WALL_COLOR)   # front pieces
-		_add_box(Vector3(0.08, OPEN_H, 0.24), Vector3(sx * (OPENING / 2.0 + 0.04), OPEN_H / 2.0, front_z), BRASS, false)   # jambs
+		_add_box(Vector3(0.08, OPEN_H, WALL + 0.02), Vector3(sx * (OPENING / 2.0), OPEN_H / 2.0, front_z), BRASS, false)   # jambs
 	_add_box(Vector3(OPENING, h - OPEN_H, WALL), Vector3(0, OPEN_H + (h - OPEN_H) / 2.0, front_z), WALL_COLOR)   # above the door
-	_add_box(Vector3(OPENING + 0.16, 0.08, 0.24), Vector3(0, OPEN_H + 0.04, front_z), BRASS, false)   # brass strip
+	_add_box(Vector3(OPENING + 0.16, 0.08, WALL + 0.04), Vector3(0, OPEN_H - 0.04, front_z), BRASS, false)   # brass header, hangs below the wall piece
 	var lamp := OmniLight3D.new()
-	lamp.position = Vector3(0, CAB.y - 0.3, 0)
-	lamp.omni_range = 5.0
+	lamp.position = Vector3(0, CAB.y - 0.4, 0)
+	lamp.omni_range = 9.0
+	lamp.light_energy = 1.5
 	lamp.light_color = Color(1.0, 0.85, 0.6)
 	add_child(lamp)
 
 func _make_door(x: float) -> AnimatableBody3D:
-	var size := Vector3(OPENING / 2.0 + 0.02, OPEN_H, 0.06)
+	var door_h := OPEN_H - 0.08   # stops at the brass header
+	var size := Vector3(OPENING / 2.0 + 0.02, door_h, 0.06)
 	var body := AnimatableBody3D.new()
-	body.position = Vector3(x, OPEN_H / 2.0, CAB.z / 2.0 - 0.04)
+	body.position = Vector3(x, door_h / 2.0, CAB.z / 2.0 - 0.04)
 	var mesh := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = size
@@ -128,9 +131,9 @@ func _make_screen(panel: Vector2, big: int, cap: int, pos: Vector3) -> Screen3D:
 func _build_button() -> void:
 	_button = BUTTON_SCENE.instantiate() as PressButton
 	_button.label_text = "GO"
-	_button.size = Vector3(0.4, 0.08, 0.4)
-	_button.label_font_size = 48
-	_button.position = Vector3(0, 1.15, -CAB.z / 2.0 + 0.04)
+	_button.size = Vector3(0.5, 0.08, 0.5)
+	_button.label_font_size = 56
+	_button.position = Vector3(0, 1.2, -CAB.z / 2.0 + 0.04)
 	_button.rotation_degrees = Vector3(90, 0, 0)
 	add_child(_button)
 	_button.pressed.connect(_on_button_pressed)
