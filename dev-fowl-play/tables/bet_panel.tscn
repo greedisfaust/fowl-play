@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://4vuq6pxeeo3"]
+
+[ext_resource type="Script" uid="uid://dmeoiuc6qqngs" path="res://tables/bet_panel.gd" id="1_fjho5"]
+
+[node name="BetPanel" type="Node3D" unique_id=295813749]
+script = ExtResource("1_fjho5")

@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://dap7heusvq3fc"]
+
+[ext_resource type="Script" uid="uid://f3t5undw1858" path="res://ui/hud.gd" id="1_rbyyf"]
+
+[node name="HUD" type="CanvasLayer" unique_id=234827813]
+script = ExtResource("1_rbyyf")
+
+[node name="Stats" type="VBoxContainer" parent="." unique_id=1382944207]
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 60.0
+offset_bottom = 60.0
+
+[node name="TimerLabel" type="Label" parent="Stats" unique_id=1905418444]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "0:00"
+
+[node name="WalletLabel" type="Label" parent="Stats" unique_id=1899228617]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "$0"
+
+[node name="QuotaLabel" type="Label" parent="Stats" unique_id=393377736]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "Quota"
+
+[node name="AnnouncerLabel" type="Label" parent="." unique_id=740228489]
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 80.0
+offset_bottom = 130.0
+grow_horizontal = 2
+offset_transform_position = Vector2(0, 80)
+theme_override_font_sizes/font_size = 36
+text = "A"
+horizontal_alignment = 1

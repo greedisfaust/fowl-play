@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://yts8y1ieyhvd"]
+
+[ext_resource type="Script" uid="uid://bhv0qkdibowf6" path="res://tables/screen_3d.gd" id="1_xh2va"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_xh2va"]
+size = Vector3(0.8, 0.4, 0.03)
+
+[node name="Screen3D" type="Node3D" unique_id=1645846508]
+script = ExtResource("1_xh2va")
+
+[node name="Backing" type="MeshInstance3D" parent="." unique_id=23152077]
+mesh = SubResource("BoxMesh_xh2va")
+
+[node name="Caption" type="Label3D" parent="." unique_id=157653256]
+pixel_size = 0.003
+
+[node name="BigText" type="Label3D" parent="." unique_id=834915393]
+pixel_size = 0.003

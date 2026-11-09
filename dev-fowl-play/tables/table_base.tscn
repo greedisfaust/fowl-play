@@ -1,0 +1,36 @@
+[gd_scene format=3 uid="uid://bwhmubqera24n"]
+
+[ext_resource type="Script" uid="uid://6bxrrf228nqm" path="res://tables/table_base.gd" id="1_e071p"]
+[ext_resource type="PackedScene" uid="uid://ct058r80ak8kh" path="res://tables/press_button.tscn" id="2_6f5hf"]
+[ext_resource type="PackedScene" uid="uid://4vuq6pxeeo3" path="res://tables/bet_panel.tscn" id="3_eufxj"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_v5vuv"]
+albedo_color = Color(0.36078432, 0.08235294, 0.1254902, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_g4v7s"]
+size = Vector3(3, 0.9, 1.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_g4v7s"]
+size = Vector3(3, 0.9, 1.6)
+
+[node name="TableBase" type="Node3D" unique_id=118357172]
+script = ExtResource("1_e071p")
+
+[node name="Counter" type="MeshInstance3D" parent="." unique_id=953748651]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, 0)
+material_override = SubResource("StandardMaterial3D_v5vuv")
+mesh = SubResource("BoxMesh_g4v7s")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="Counter" unique_id=1408337880]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Counter/StaticBody3D" unique_id=1656753530]
+shape = SubResource("BoxShape3D_g4v7s")
+
+[node name="Buttons" type="Node3D" parent="." unique_id=252179123]
+
+[node name="PlayButton" parent="Buttons" unique_id=1188995217 instance=ExtResource("2_6f5hf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.1, 0.95, 0.45)
+label_text = "PLAY"
+
+[node name="BetPanel" parent="." unique_id=295813749 instance=ExtResource("3_eufxj")]
+transform = Transform3D(0.8660253, 0.4698463, 0.17101008, 0, 0.34202015, -0.9396926, -0.49999997, 0.81379765, 0.29619813, -1.2911137, 1.249816, 1.2125168)

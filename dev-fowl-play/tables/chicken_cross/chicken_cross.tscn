@@ -1,0 +1,41 @@
+[gd_scene format=3 uid="uid://1vkhxbv1uo10"]
+
+[ext_resource type="PackedScene" uid="uid://bwhmubqera24n" path="res://tables/table_base.tscn" id="1_evy8a"]
+[ext_resource type="Script" uid="uid://5mee7tltfqwg" path="res://tables/chicken_cross/chicken_cross.gd" id="2_5b08h"]
+[ext_resource type="PackedScene" uid="uid://ct058r80ak8kh" path="res://tables/press_button.tscn" id="2_bocjf"]
+[ext_resource type="PackedScene" uid="uid://yts8y1ieyhvd" path="res://tables/screen_3d.tscn" id="4_afitu"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_57qmd"]
+albedo_color = Color(1, 1, 0, 1)
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_g4v7s"]
+radius = 0.07
+height = 0.3
+
+[node name="ChickenCross" unique_id=118357172 instance=ExtResource("1_evy8a")]
+script = ExtResource("2_5b08h")
+display_name = "Chicken Cross"
+uses_play_button = false
+
+[node name="ProceedButton" parent="Buttons" parent_id_path=PackedInt32Array(252179123) index="1" unique_id=1972899865 instance=ExtResource("2_bocjf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 0.95, 0.45)
+label_text = "CROSS"
+button_color = Color(0.2, 0.7490196, 0.3019608, 1)
+
+[node name="CashOutButton" parent="Buttons" parent_id_path=PackedInt32Array(252179123) index="2" unique_id=1832996656 instance=ExtResource("2_bocjf")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9, 0.95, 0.45)
+label_text = "CASHOUT"
+button_color = Color(0.9490196, 0.7490196, 0.101960786, 1)
+
+[node name="Road" type="Node3D" parent="." index="3" unique_id=1309803239]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, -0.45)
+
+[node name="Chicken" type="MeshInstance3D" parent="Road" index="0" unique_id=1734923646]
+material_override = SubResource("StandardMaterial3D_57qmd")
+mesh = SubResource("CapsuleMesh_g4v7s")
+
+[node name="StatusScreen" parent="." index="4" unique_id=1645846508 instance=ExtResource("4_afitu")]
+transform = Transform3D(1, 0, 0, 0, 0.9848077, 0.17364818, 0, -0.17364818, 0.9848077, 0, 1.67, -1.2)
+panel_size = Vector2(3.6, 1.6)
+text_color = Color(1, 0.9019608, 0.3019608, 1)
+big_font_size = 56
