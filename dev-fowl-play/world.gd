@@ -1,6 +1,12 @@
 extends Node3D
 
 const PLAYER_SCENE := preload("res://player/player.tscn")
+const FADE_TIME := 1.5
+
+@onready var lobby_elevator: Elevator = $Apartment/Elevator
+@onready var casino_elevator: Elevator = $Casino/Elevator
+
+var _riding := false   # host only: true while an elevator ride is playing
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -18,18 +24,21 @@ func _ready() -> void:
 	ip_term.set_text(Network.last_ip)
 	$Apartment/LobbyConsole.create_pressed.connect(_on_create_pressed)
 	$Apartment/LobbyConsole.leave_pressed.connect(_on_leave_pressed)
-	var door: DoorZone = $Apartment/DoorZone
-	door.countdown_finished.connect(_on_countdown_finished)
+
 	GameState.day_ended.connect(_on_day_ended)
 	GameState.day_result.connect(_on_day_result)
-	GameState.phase_changed.connect(_refresh_board)
-	GameState.quota_changed.connect(func(_q: int) -> void: _refresh_board())
-	GameState.wallet_changed.connect(func(_w: int) -> void: _refresh_board())
-	door.count_changed.connect(_on_count_changed)
-	
+	GameState.phase_changed.connect(_on_game_changed)
+	GameState.quota_changed.connect(func(_q: int) -> void: _on_game_changed())
+	GameState.wallet_changed.connect(func(_w: int) -> void: _on_game_changed())
+
+	lobby_elevator.open_title = "DOOR"
+	casino_elevator.open_title = "QUOTA MET!"
+	lobby_elevator.ride_requested.connect(func() -> void: _ride(lobby_elevator, casino_elevator))
+	casino_elevator.ride_requested.connect(func() -> void: _ride(casino_elevator, lobby_elevator))
+
 	_spawn_player(1)
 	_show_my_nickname()
-	_refresh_board()
+	_on_game_changed()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -76,6 +85,10 @@ func _go_solo() -> void:
 		$Players.remove_child(p)
 		p.queue_free()
 	Network.leave()
+	_riding = false
+	$HUD.fade_to(0.0, 0.2)
+	lobby_elevator.reset()
+	casino_elevator.reset()
 	_spawn_player(1)
 
 # ---------- players ----------
@@ -112,6 +125,10 @@ func _show_my_nickname() -> void:
 	if not term.is_typing():
 		term.set_text(Network.player_name(multiplayer.get_unique_id()))
 
+func _on_game_changed() -> void:
+	_refresh_board()
+	_refresh_elevators()
+
 func _refresh_board() -> void:
 	var lines := PackedStringArray()
 	for slot in range(1, 5):
@@ -122,38 +139,80 @@ func _refresh_board() -> void:
 		lines.append(line)
 	var life := "EXTRA LIFE: YES" if GameState.extra_life else "EXTRA LIFE: NO"
 	$Apartment/PlayerBoard.set_text("\n".join(lines), "DAY %d   WALLET $%d\nQUOTA $%d   %s" % [GameState.day, GameState.wallet, GameState.quota, life])
-	
-func _on_countdown_finished() -> void:
-	if not multiplayer.is_server():
-		return
-	$Apartment/DoorZone.enabled = false
-	multiplayer.multiplayer_peer.refuse_new_connections = true
-	for id in Network.players:
-		var player = $Players.get_node_or_null(str(id))
-		if player:
-			var slot: int = Network.players[id]
-			var dest: Vector3 = $Casino/Spawn.global_position + Vector3((slot - 2.5) * 1.0, 0, 0)
-			player.teleport_to.rpc_id(id, dest)
-	GameState.start_day()
-	
-func _on_day_ended() -> void:
-	if not multiplayer.is_server():
-		return
-	# let any round in progress finish so its payout isn't lost
-	while get_tree().get_nodes_in_group("tables").any(func(t: Node) -> bool: return t.running):
-		await get_tree().create_timer(0.25).timeout
-	GameState.end_day()
-	_return_to_apartment()
 
-func _return_to_apartment() -> void:
+func _refresh_elevators() -> void:   # runs on every machine; GameState is mirrored
+	if GameState.phase != GameState.Phase.DAY:
+		casino_elevator.lock_text = "NO ACTIVE DAY"
+	elif GameState.wallet < GameState.quota:
+		casino_elevator.lock_text = "QUOTA NOT MET"
+	else:
+		casino_elevator.lock_text = ""
+
+# ---------- the elevator ride (host drives everything) ----------
+@rpc("authority", "call_local", "reliable")
+func _fade(alpha: float, secs: float) -> void:
+	$HUD.fade_to(alpha, secs)
+
+func _ride(from: Elevator, to: Elevator, forced := false) -> void:
+	if not multiplayer.is_server() or _riding:
+		return
+	_riding = true
+	var going_out := from == lobby_elevator
+	from.set_riding.rpc(true)
+	if going_out:
+		multiplayer.multiplayer_peer.refuse_new_connections = true
+	else:
+		await _settle_tables()
+	if not forced:
+		from.close_doors.rpc()
+		await get_tree().create_timer(Elevator.DOOR_TIME + 0.4).timeout
+	_fade.rpc(1.0, FADE_TIME)
+	await get_tree().create_timer(FADE_TIME + 0.4).timeout
+	if not going_out:
+		await _day_report()
+	_send_all_to(to)
+	from.set_riding.rpc(false)
+	await get_tree().create_timer(0.8).timeout
+	if not going_out:
+		GameState.end_day()
+		multiplayer.multiplayer_peer.refuse_new_connections = false
+	_fade.rpc(0.0, FADE_TIME)
+	await get_tree().create_timer(FADE_TIME).timeout
+	to.open_doors.rpc()
+	if going_out:
+		GameState.start_day()
+	await get_tree().create_timer(Elevator.DOOR_TIME + 0.3).timeout
+	_riding = false
+
+func _send_all_to(dest: Elevator) -> void:
+	dest.close_doors_instant.rpc()
 	for id in Network.players:
 		var player = $Players.get_node_or_null(str(id))
 		if player:
 			var slot: int = Network.players[id]
-			var dest: Vector3 = $Apartment/Spawn.global_position + Vector3((slot - 2.5) * 1.0, 0, 0)
-			player.teleport_to.rpc_id(id, dest)
-	$Apartment/DoorZone.enabled = true
-	multiplayer.multiplayer_peer.refuse_new_connections = false
+			player.teleport_to.rpc_id(id, dest.arrival_position(slot), dest.arrival_yaw())
+
+func _settle_tables() -> void:
+	# let a round in progress finish so its payout isn't lost, but never wait forever
+	var waited := 0.0
+	while waited < 10.0 and _any_table_running():
+		await get_tree().create_timer(0.25).timeout
+		waited += 0.25
+	for t in get_tree().get_nodes_in_group("tables"):
+		if t.running:
+			t.finish_round(0)   # TEMP policy: an unfinished round forfeits its bet
+
+func _any_table_running() -> bool:
+	return get_tree().get_nodes_in_group("tables").any(func(t: Node) -> bool: return t.running)
+
+func _day_report() -> void:
+	await get_tree().create_timer(1.0).timeout   # TODO: the Day Report plays here, over the black screen
+
+func _on_day_ended() -> void:
+	$HUD.announce("TIME'S UP!")
+	if not multiplayer.is_server() or _riding:
+		return
+	_ride(casino_elevator, lobby_elevator, true)   # forced: no door animation, straight to black
 
 func _on_day_result(outcome: int, finished_day: int) -> void:
 	match outcome:
@@ -166,21 +225,12 @@ func _on_day_result(outcome: int, finished_day: int) -> void:
 		GameState.Outcome.WON:
 			$HUD.announce("CONTRACT VOIDED! YOU WIN")
 
-func _on_count_changed(s: int) -> void:
-	if s > 0:
-		$HUD.announce("STARTING IN %d..." % s)
-	elif s == 0:
-		$HUD.announce("HEADING OUT!")
-	else:
-		$HUD.announce("COUNTDOWN CANCELLED")
-
-# ---------- dev only (L4 replaces these) ----------
+# ---------- dev only ----------
 func _dev_teleport_home() -> void:
 	var me := $Players.get_node_or_null(str(multiplayer.get_unique_id()))
 	if me == null:
 		return
 	me.position = $Apartment/Spawn.global_position + Vector3(randf_range(-1.0, 1.0), 0, 0)
 	if multiplayer.is_server():
-		$Apartment/DoorZone.enabled = true
 		GameState.phase = GameState.Phase.REST
 		multiplayer.multiplayer_peer.refuse_new_connections = false

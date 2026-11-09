@@ -6,7 +6,8 @@
 [ext_resource type="PackedScene" uid="uid://ckfabxbl2tc7x" path="res://lobby/text_terminal.tscn" id="4_aqk2v"]
 [ext_resource type="PackedScene" uid="uid://yts8y1ieyhvd" path="res://tables/screen_3d.tscn" id="4_dwbse"]
 [ext_resource type="PackedScene" uid="uid://datx111tb4hvp" path="res://lobby/lobby_console.tscn" id="5_036b0"]
-[ext_resource type="Script" uid="uid://dxq2gd552byl5" path="res://lobby/door_zone.gd" id="7_pkg7o"]
+[ext_resource type="Script" uid="uid://du8oc7qsxmdjn" path="res://elevator/elevator.gd" id="5_gbfbk"]
+[ext_resource type="PackedScene" uid="uid://d3c6fhjpfj2yn" path="res://elevator/elevator.tscn" id="7_pkg7o"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_57qmd"]
 
@@ -44,22 +45,6 @@ albedo_color = Color(0.92941177, 0.8901961, 0.8156863, 1)
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pkg7o"]
 albedo_color = Color(0.92941177, 0.8901961, 0.8156863, 1)
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_yf5fn"]
-size = Vector3(6, 4, 5.5)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_d0u6y"]
-transparency = 1
-albedo_color = Color(0.2, 1, 0.4, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_57qmd"]
-size = Vector3(6, 0.02, 5.5)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gbfbk"]
-albedo_color = Color(0.41960785, 0.26666668, 0.13725491, 1)
-
-[sub_resource type="BoxMesh" id="BoxMesh_d0u6y"]
-size = Vector3(1.7, 2.72, 0.033)
-
 [node name="World" type="Node3D" unique_id=477242409]
 script = ExtResource("1_tlwt5")
 
@@ -94,6 +79,10 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
 
 [node name="Spawn" type="Marker3D" parent="Casino" unique_id=48755010]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 2)
+
+[node name="Elevator" parent="Casino" unique_id=1319015752 instance=ExtResource("7_pkg7o")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, -13)
+script = ExtResource("5_gbfbk")
 
 [node name="Apartment" type="Node3D" parent="." unique_id=694171853]
 
@@ -152,28 +141,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
 [node name="NicknameTerminal" parent="Apartment" unique_id=499022950 instance=ExtResource("4_aqk2v")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 1.3, -5.8)
 
-[node name="DoorZone" type="Area3D" parent="Apartment" unique_id=1971322862]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 4.9)
-script = ExtResource("7_pkg7o")
-
-[node name="Sign" parent="Apartment/DoorZone" unique_id=1464748678 instance=ExtResource("4_dwbse")]
-transform = Transform3D(-1, 2.262668e-08, 8.444392e-08, 0, 0.9659258, -0.25881904, -8.742278e-08, -0.25881904, -0.9659258, 0, 2.6, 0.65)
-panel_size = Vector2(2.2, 1.25)
-text_color = Color(1, 0, 0.3019608, 1)
-big_font_size = 100
-caption_font_size = 26
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="Apartment/DoorZone" unique_id=1627439020]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -1.5)
-shape = SubResource("BoxShape3D_yf5fn")
-
-[node name="Pad" type="MeshInstance3D" parent="Apartment/DoorZone" unique_id=1500424780]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.99, -1.5)
-material_override = SubResource("StandardMaterial3D_d0u6y")
-transparency = 0.35
-mesh = SubResource("BoxMesh_57qmd")
-
-[node name="DoorSlab" type="MeshInstance3D" parent="Apartment" unique_id=169231682]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3601395, 5.873535)
-material_override = SubResource("StandardMaterial3D_gbfbk")
-mesh = SubResource("BoxMesh_d0u6y")
+[node name="Elevator" parent="Apartment" unique_id=351637617 instance=ExtResource("7_pkg7o")]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 4.2)
+script = ExtResource("5_gbfbk")

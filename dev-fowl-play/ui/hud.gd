@@ -6,8 +6,11 @@ extends CanvasLayer
 @onready var announcer: Label = $AnnouncerLabel
 
 var _announce_id := 0
+var _fade_rect: ColorRect
+var _fade_tween: Tween
 
 func _ready() -> void:
+	_build_fade()
 	GameState.wallet_changed.connect(_on_wallet_changed)
 	GameState.time_changed.connect(_on_time_changed)
 	GameState.round_started.connect(_on_round_started)
@@ -34,4 +37,20 @@ func announce(text: String) -> void:
 	await get_tree().create_timer(2.5).timeout
 	if my_id == _announce_id:
 		announcer.hide()
-		
+
+func _build_fade() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 10
+	add_child(layer)
+	_fade_rect = ColorRect.new()
+	_fade_rect.color = Color.BLACK
+	_fade_rect.modulate.a = 0.0
+	_fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_fade_rect)
+	_fade_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+func fade_to(alpha: float, secs: float) -> void:
+	if _fade_tween:
+		_fade_tween.kill()
+	_fade_tween = create_tween()
+	_fade_tween.tween_property(_fade_rect, "modulate:a", alpha, secs)

@@ -63,11 +63,13 @@ func _try_interact() -> void:
 		target.interact(self)
 
 @rpc("any_peer", "call_local", "reliable")
-func teleport_to(pos: Vector3) -> void:
+func teleport_to(pos: Vector3, yaw: float) -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if sender != 0 and sender != 1:
 		return   # only the host may move players
 	position = pos
+	rotation.y = yaw
+	_net_yaw = yaw
 	velocity = Vector3.ZERO
 	_net_pos = pos
 
