@@ -11,6 +11,7 @@ var bet := 0            # pending bet, visible to everyone
 var running := false    # is a round in progress?
 var bettor_id := 0      # who pressed Play
 var locked_bet := 0     # host only: what was charged at Play
+var round_info := {}    # host only: a table fills this in for the day report
 
 # ---------- HOOKS: tables override these ----------
 func _on_table_ready() -> void: pass
@@ -49,7 +50,8 @@ func finish_round(payout: int) -> void:
 	if not multiplayer.is_server() or not running:
 		return
 	GameState.add_money(payout)
-	GameState.log_round(bettor_id, display_name, locked_bet, payout)
+	GameState.log_round(bettor_id, display_name, locked_bet, payout, round_info)
+	round_info = {}
 	locked_bet = 0
 	_sync.rpc(false, 0, 0)
 	

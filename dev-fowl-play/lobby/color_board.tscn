@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c5rb5nb3dfhwl"]
+
+[ext_resource type="Script" uid="uid://20id1wiojbp2" path="res://lobby/color_board.gd" id="1_rx7j7"]
+
+[node name="ColorBoard" type="Node3D" unique_id=557179741]
+script = ExtResource("1_rx7j7")

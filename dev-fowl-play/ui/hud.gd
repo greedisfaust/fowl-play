@@ -39,14 +39,14 @@ func announce(text: String) -> void:
 		announcer.hide()
 
 func _build_fade() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = 10
-	add_child(layer)
+	var fade_layer := CanvasLayer.new()
+	fade_layer.layer = 10
+	add_child(fade_layer)
 	_fade_rect = ColorRect.new()
 	_fade_rect.color = Color.BLACK
 	_fade_rect.modulate.a = 0.0
 	_fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_fade_rect)
+	fade_layer.add_child(_fade_rect)
 	_fade_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 func fade_to(alpha: float, secs: float) -> void:

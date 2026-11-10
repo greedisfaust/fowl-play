@@ -16,6 +16,14 @@ var input_locked := false
 
 func _update_nameplate() -> void:
 	$NamePlate.text = Network.player_name(str(name).to_int())
+	_apply_color()
+	
+func _apply_color() -> void:
+	var c := Network.player_color(str(name).to_int())
+	var m := StandardMaterial3D.new()   # a new one per player, because the scene's material is shared
+	m.albedo_color = c
+	$Body.material_override = m
+	$NamePlate.modulate = c
 
 func _enter_tree() -> void:
 	set_multiplayer_authority(str(name).to_int())

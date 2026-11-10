@@ -44,9 +44,11 @@ func _on_cash_out_pressed(_v: int) -> void:
 
 # ---------- rules (host only) ----------
 func _on_round_start(_who: int, _total: int) -> void:
+	round_info = {}
 	lane = 0
 	_busy = false
 	emit_event("round_started")
+	
 
 func _on_player_action(who: int, action: String, data: Dictionary) -> void:
 	if not running:
@@ -65,6 +67,7 @@ func _proceed() -> void:
 	lane += 1
 	var chance: float = BUST_CHANCE[lane - 1]
 	var busted: bool = randf() < chance
+	round_info = {"depth": lane, "bust": busted, "chance": chance}
 	emit_event("hop", {"lane": lane, "bust": busted})
 	await get_tree().create_timer(HOP_TIME + 0.5).timeout
 	if busted:

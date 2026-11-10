@@ -5,7 +5,8 @@ const FADE_TIME := 1.5
 
 @onready var lobby_elevator: Elevator = $Apartment/Elevator
 @onready var casino_elevator: Elevator = $Casino/Elevator
-
+signal report_done
+var _report: DayReport
 var _riding := false   # host only: true while an elevator ride is playing
 
 func _ready() -> void:
@@ -19,6 +20,7 @@ func _ready() -> void:
 
 	var nick: TextTerminal = $Apartment/NicknameTerminal
 	nick.submitted.connect(Network.set_my_nickname)
+	$Apartment/ColorBoard.chosen.connect(Network.set_my_color)
 	var ip_term: TextTerminal = $Apartment/JoinTerminal
 	ip_term.submitted.connect(_on_ip_submitted)
 	ip_term.set_text(Network.last_ip)
@@ -47,6 +49,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_dev_teleport_home()
 			KEY_L:
 				_dev_teleport_home()
+			KEY_TAB:
+				if multiplayer.is_server() and _report:
+					_skip_report.rpc()   # host skips the report
 
 # ---------- lobby buttons ----------
 func _on_create_pressed() -> void:
@@ -206,7 +211,23 @@ func _any_table_running() -> bool:
 	return get_tree().get_nodes_in_group("tables").any(func(t: Node) -> bool: return t.running)
 
 func _day_report() -> void:
-	await get_tree().create_timer(1.0).timeout   # TODO: the Day Report plays here, over the black screen
+	_play_report.rpc(GameState.day_summary())
+	await report_done
+	_skip_report.rpc()   # ends it on any slower client
+
+@rpc("authority", "call_local", "reliable")
+func _play_report(summary: Dictionary) -> void:
+	_report = DayReport.new()
+	add_child(_report)
+	await _report.play(summary)
+	_report.queue_free()
+	_report = null
+	report_done.emit()
+
+@rpc("authority", "call_local", "reliable")
+func _skip_report() -> void:
+	if _report:
+		_report.skip()
 
 func _on_day_ended() -> void:
 	$HUD.announce("TIME'S UP!")
