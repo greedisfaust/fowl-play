@@ -84,18 +84,20 @@ func _quota_for(for_day: int, basis: int) -> int:
 func end_day() -> void:   # host only
 	if not multiplayer.is_server():
 		return
-	if wallet >= quota:
-		if day >= FINAL_DAY:
-			_finish_day.rpc(Outcome.WON, 1, QUOTA, START_WALLET, true)   # TEMP: fresh run
-		else:
+	match preview_outcome():
+		Outcome.WON:
+			_finish_day.rpc(Outcome.WON, 1, QUOTA, START_WALLET, true)
+		Outcome.PASSED:
 			_finish_day.rpc(Outcome.PASSED, day + 1, _quota_for(day + 1, wallet), wallet, extra_life)
-	elif extra_life:
-		_finish_day.rpc(Outcome.EXTRA_LIFE_SPENT, day + 1, _quota_for(day + 1, day_start_wallet), floori(day_start_wallet / 2.0), false)
-	else:
-		_finish_day.rpc(Outcome.GAME_OVER, 1, QUOTA, START_WALLET, true)   # TEMP: fresh run
+		Outcome.EXTRA_LIFE_SPENT:
+			_finish_day.rpc(Outcome.EXTRA_LIFE_SPENT, day + 1, _quota_for(day + 1, day_start_wallet), floori(day_start_wallet / 2.0), false)
+		_:
+			_finish_day.rpc(Outcome.GAME_OVER, 1, QUOTA, START_WALLET, true)
 
 @rpc("authority", "call_local", "reliable")
 func _finish_day(outcome: int, new_day: int, new_quota: int, new_wallet: int, new_extra: bool) -> void:
+	if outcome == Outcome.GAME_OVER or outcome == Outcome.WON:
+		ledger.clear()   # the next run starts with a clean ledger
 	var finished := day
 	running = false
 	phase = Phase.REST
@@ -109,6 +111,27 @@ func _finish_day(outcome: int, new_day: int, new_quota: int, new_wallet: int, ne
 	time_changed.emit(ceili(time_left))
 	phase_changed.emit()
 	day_result.emit(outcome, finished)
+
+func preview_outcome() -> int:   # host only: what end_day() will decide, without applying it
+	if wallet >= quota:
+		return Outcome.WON if day >= FINAL_DAY else Outcome.PASSED
+	return Outcome.EXTRA_LIFE_SPENT if extra_life else Outcome.GAME_OVER
+
+func reset_run() -> void:   # local only: a fresh run (used when a player drops to solo)
+	running = false
+	phase = Phase.REST
+	day = 1
+	quota = QUOTA
+	wallet = START_WALLET
+	extra_life = true
+	day_start_wallet = START_WALLET
+	time_left = DAY_LENGTH
+	ledger.clear()
+	wallet_history.clear()
+	wallet_changed.emit(wallet)
+	quota_changed.emit(quota)
+	time_changed.emit(ceili(time_left))
+	phase_changed.emit()
 
 # ---------- money ----------
 func try_spend(amount: int) -> bool:

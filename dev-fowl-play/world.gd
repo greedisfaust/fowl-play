@@ -1,13 +1,16 @@
 extends Node3D
 
+signal report_done
+
 const PLAYER_SCENE := preload("res://player/player.tscn")
 const FADE_TIME := 1.5
 
 @onready var lobby_elevator: Elevator = $Apartment/Elevator
+@onready var rest_elevator: Elevator = $Rest/Elevator
 @onready var casino_elevator: Elevator = $Casino/Elevator
-signal report_done
-var _report: DayReport
+
 var _riding := false   # host only: true while an elevator ride is playing
+var _report: DayReport
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
@@ -33,10 +36,12 @@ func _ready() -> void:
 	GameState.quota_changed.connect(func(_q: int) -> void: _on_game_changed())
 	GameState.wallet_changed.connect(func(_w: int) -> void: _on_game_changed())
 
-	lobby_elevator.open_title = "DOOR"
+	lobby_elevator.open_title = "START RUN"
+	rest_elevator.open_title = "NEXT DAY"
 	casino_elevator.open_title = "QUOTA MET!"
-	lobby_elevator.ride_requested.connect(func() -> void: _ride(lobby_elevator, casino_elevator))
-	casino_elevator.ride_requested.connect(func() -> void: _ride(casino_elevator, lobby_elevator))
+	lobby_elevator.ride_requested.connect(func() -> void: _ride(lobby_elevator))
+	rest_elevator.ride_requested.connect(func() -> void: _ride(rest_elevator))
+	casino_elevator.ride_requested.connect(func() -> void: _ride(casino_elevator))
 
 	_spawn_player(1)
 	_show_my_nickname()
@@ -45,9 +50,7 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
-			KEY_K:
-				_dev_teleport_home()
-			KEY_L:
+			KEY_K, KEY_L:
 				_dev_teleport_home()
 			KEY_TAB:
 				if multiplayer.is_server() and _report:
@@ -90,9 +93,11 @@ func _go_solo() -> void:
 		$Players.remove_child(p)
 		p.queue_free()
 	Network.leave()
+	GameState.reset_run()   # a fresh run, so no stale day or wallet follows you home
 	_riding = false
 	$HUD.fade_to(0.0, 0.2)
 	lobby_elevator.reset()
+	rest_elevator.reset()
 	casino_elevator.reset()
 	_spawn_player(1)
 
@@ -132,9 +137,10 @@ func _show_my_nickname() -> void:
 
 func _on_game_changed() -> void:
 	_refresh_board()
+	_refresh_status()
 	_refresh_elevators()
 
-func _refresh_board() -> void:
+func _refresh_board() -> void:   # the Lobby roster
 	var lines := PackedStringArray()
 	for slot in range(1, 5):
 		var line := "%d  -" % slot
@@ -142,8 +148,11 @@ func _refresh_board() -> void:
 			if Network.players[id] == slot:
 				line = "%d  %s" % [slot, Network.player_name(id)]
 		lines.append(line)
+	$Apartment/PlayerBoard.set_text("\n".join(lines), "PLAYERS IN LOBBY")
+
+func _refresh_status() -> void:   # the Rest room's run status
 	var life := "EXTRA LIFE: YES" if GameState.extra_life else "EXTRA LIFE: NO"
-	$Apartment/PlayerBoard.set_text("\n".join(lines), "DAY %d   WALLET $%d\nQUOTA $%d   %s" % [GameState.day, GameState.wallet, GameState.quota, life])
+	$Rest/StatusBoard.set_text("DAY %d" % GameState.day, "WALLET $%d\nQUOTA $%d\n%s" % [GameState.wallet, GameState.quota, life])
 
 func _refresh_elevators() -> void:   # runs on every machine; GameState is mirrored
 	if GameState.phase != GameState.Phase.DAY:
@@ -158,16 +167,20 @@ func _refresh_elevators() -> void:   # runs on every machine; GameState is mirro
 func _fade(alpha: float, secs: float) -> void:
 	$HUD.fade_to(alpha, secs)
 
-func _ride(from: Elevator, to: Elevator, forced := false) -> void:
+func _ride(from: Elevator, forced := false) -> void:
 	if not multiplayer.is_server() or _riding:
 		return
 	_riding = true
-	var going_out := from == lobby_elevator
+	var going_out := from != casino_elevator   # Lobby or Rest -> Casino
+	var to: Elevator = casino_elevator
 	from.set_riding.rpc(true)
 	if going_out:
-		multiplayer.multiplayer_peer.refuse_new_connections = true
+		multiplayer.multiplayer_peer.refuse_new_connections = true   # closed for the whole run
 	else:
 		await _settle_tables()
+		var outcome := GameState.preview_outcome()   # decided now, so we know where everyone goes
+		var run_over := outcome == GameState.Outcome.GAME_OVER or outcome == GameState.Outcome.WON
+		to = lobby_elevator if run_over else rest_elevator
 	if not forced:
 		from.close_doors.rpc()
 		await get_tree().create_timer(Elevator.DOOR_TIME + 0.4).timeout
@@ -180,7 +193,8 @@ func _ride(from: Elevator, to: Elevator, forced := false) -> void:
 	await get_tree().create_timer(0.8).timeout
 	if not going_out:
 		GameState.end_day()
-		multiplayer.multiplayer_peer.refuse_new_connections = false
+		if to == lobby_elevator:
+			multiplayer.multiplayer_peer.refuse_new_connections = false   # the run is over: joins reopen
 	_fade.rpc(0.0, FADE_TIME)
 	await get_tree().create_timer(FADE_TIME).timeout
 	to.open_doors.rpc()
@@ -233,7 +247,7 @@ func _on_day_ended() -> void:
 	$HUD.announce("TIME'S UP!")
 	if not multiplayer.is_server() or _riding:
 		return
-	_ride(casino_elevator, lobby_elevator, true)   # forced: no door animation, straight to black
+	_ride(casino_elevator, true)   # forced: no door animation, straight to black
 
 func _on_day_result(outcome: int, finished_day: int) -> void:
 	match outcome:
