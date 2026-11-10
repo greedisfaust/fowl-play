@@ -1,15 +1,15 @@
 [gd_scene format=3 uid="uid://6ksjly75m5pk"]
 
 [ext_resource type="Script" uid="uid://boyxfojgaqe8t" path="res://world.gd" id="1_tlwt5"]
-[ext_resource type="Script" path="res://environment/house_environment.gd" id="11_house"]
 [ext_resource type="PackedScene" uid="uid://dap7heusvq3fc" path="res://ui/hud.tscn" id="2_aqk2v"]
 [ext_resource type="PackedScene" uid="uid://1vkhxbv1uo10" path="res://tables/chicken_cross/chicken_cross.tscn" id="3_036b0"]
-[ext_resource type="PackedScene" path="res://tables/cluckjack/cluckjack.tscn" id="10_cluckjack"]
 [ext_resource type="PackedScene" uid="uid://ckfabxbl2tc7x" path="res://lobby/text_terminal.tscn" id="4_aqk2v"]
 [ext_resource type="PackedScene" uid="uid://yts8y1ieyhvd" path="res://tables/screen_3d.tscn" id="4_dwbse"]
 [ext_resource type="PackedScene" uid="uid://datx111tb4hvp" path="res://lobby/lobby_console.tscn" id="5_036b0"]
 [ext_resource type="PackedScene" uid="uid://d3c6fhjpfj2yn" path="res://elevator/elevator.tscn" id="7_pkg7o"]
 [ext_resource type="PackedScene" uid="uid://c5rb5nb3dfhwl" path="res://lobby/color_board.tscn" id="9_ioo17"]
+[ext_resource type="PackedScene" path="res://tables/cluckjack/cluckjack.tscn" id="10_cluckjack"]
+[ext_resource type="Script" uid="uid://b5v8njej3yrd4" path="res://environment/house_environment.gd" id="11_house"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_57qmd"]
 
@@ -60,7 +60,7 @@ environment = SubResource("Environment_g4v7s")
 
 [node name="Players" type="Node3D" parent="." unique_id=1080641893]
 
-[node name="House" type="Node3D" parent="."]
+[node name="House" type="Node3D" parent="." unique_id=325808823]
 script = ExtResource("11_house")
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="." unique_id=437796381]
@@ -85,8 +85,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 0)
 [node name="Spawn" type="Marker3D" parent="Casino" unique_id=48755010]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 2)
 
-[node name="Cluckjack" parent="Casino" instance=ExtResource("10_cluckjack")]
-position = Vector3(5, 0.2, 0)
+[node name="Cluckjack" parent="Casino" unique_id=1333525664 instance=ExtResource("10_cluckjack")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0.2, 0)
 
 [node name="Elevator" parent="Casino" unique_id=1319015752 instance=ExtResource("7_pkg7o")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, -18.9)
