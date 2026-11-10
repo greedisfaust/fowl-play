@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://dd0xqp63vgq7h"]
+
+[ext_resource type="Script" uid="uid://d4gmkm7elx323" path="res://tables/Roulette/roulette.gd" id="1_eb5rx"]
+[ext_resource type="PackedScene" uid="uid://4vuq6pxeeo3" path="res://tables/bet_panel.tscn" id="1_ok0pe"]
+[ext_resource type="PackedScene" uid="uid://ct058r80ak8kh" path="res://tables/press_button.tscn" id="2_eb5rx"]
+[ext_resource type="Script" uid="uid://drbtk7lyews10" path="res://tables/Roulette/roulette_betting_board.gd" id="3_3mexq"]
+
+[node name="Roulette" type="Node3D" unique_id=379695214]
+script = ExtResource("1_eb5rx")
+
+[node name="BetPanel" parent="." unique_id=295813749 instance=ExtResource("1_ok0pe")]
+
+[node name="Buttons" type="Node3D" parent="." unique_id=767748735]
+
+[node name="PlayButton" parent="Buttons" unique_id=1972899865 instance=ExtResource("2_eb5rx")]
+
+[node name="BettingBoard" type="Node3D" parent="." unique_id=1830387906]
+script = ExtResource("3_3mexq")
+
+[node name="BoardMesh" type="MeshInstance3D" parent="BettingBoard" unique_id=661453620]
+
+[node name="NumberBets" type="Node3D" parent="BettingBoard" unique_id=590984442]
+
+[node name="OutsideBets" type="Node3D" parent="BettingBoard" unique_id=692975617]
+
+[node name="DozenColumnBets" type="Node3D" parent="BettingBoard" unique_id=1690235545]
