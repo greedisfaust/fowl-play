@@ -8,8 +8,14 @@ extends CanvasLayer
 var _announce_id := 0
 var _fade_rect: ColorRect
 var _fade_tween: Tween
+var _run_label: Label
 
 func _ready() -> void:
+	_run_label = Label.new()
+	_run_label.add_theme_font_size_override("font_size", 21)
+	$Stats.add_child(_run_label)
+	GameState.phase_changed.connect(_refresh_run_label)
+	_refresh_run_label()
 	_build_fade()
 	GameState.wallet_changed.connect(_on_wallet_changed)
 	GameState.time_changed.connect(_on_time_changed)
@@ -19,6 +25,9 @@ func _ready() -> void:
 	_on_time_changed(ceili(GameState.time_left))
 	announcer.hide()
 	GameState.quota_changed.connect(func(q: int) -> void: quota_label.text = "Quota: $%d" % q)
+
+func _refresh_run_label() -> void:
+	_run_label.text = "DAY %d / 10  |  COURTESY: %s" % [GameState.day, "AVAILABLE" if GameState.extra_life else "SPENT"]
 
 func _on_wallet_changed(value: int) -> void:
 	wallet_label.text = "$%d" % value

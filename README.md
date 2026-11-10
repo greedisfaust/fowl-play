@@ -34,12 +34,17 @@ returns clients to fresh solo runs.
 | Move / look | WASD / mouse |
 | Jump | Space |
 | Interact with aimed terminal, keypad, or button | E or left mouse |
+| Pick up a small prop / push larger furniture | E or left mouse; walk into loose props to push |
+| Drop carried object (one slot) | G |
+| Charge / throw carried object | Hold / release right mouse (maximum charge: 1.25 s) |
+| Read / close lore guides | E or left mouse / E or Escape; wheel or Page Up/Down to scroll |
 | Release / recapture mouse | Escape / click |
 | Skip day report (host) | Tab |
 | Developer teleport to apartment | K or L (unsafe during a run) |
 
 Escape releases the cursor; it does **not** pause the simulation. The GDD's
-alternate bindings, combat, carrying, throwing, and seating are not implemented.
+alternate bindings, teammate combat/carry/throw, and seating are not implemented.
+Loose objects support carrying and throwing as described above.
 
 ## Project map and documentation
 
@@ -49,6 +54,7 @@ alternate bindings, combat, carrying, throwing, and seating are not implemented.
 - [Playability, comparable games, and test protocol](docs/PLAYTESTING.md)
 - [Assets and attribution register](docs/ASSETS.md)
 - [Cluckjack rules, integration and test commands](docs/CLUCKJACK.md)
+- [Room storytelling, physics props and interaction controls](docs/HOUSE_AND_HAND.md)
 
 The supplied **GAMDES1_GDD_Fowl-Play_v3.docx**, dated 30 October 2026, describes
 design intent. Code and the status document describe shipped behavior. Record

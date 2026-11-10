@@ -1,16 +1,16 @@
 # Implementation audit
 
 Baseline: `a358ecd`, audited 10 November 2026 against GDD v3; updated for the
-Cluckjack feature. **Implemented** here
+Cluckjack and House/hand features. **Implemented** here
 means present in source; multiplayer reliability and player enjoyment still need
 the repeatable checks in [PLAYTESTING.md](PLAYTESTING.md).
 
 | Area | Current implementation / evidence | Remaining work |
 | --- | --- | --- |
-| First-person player | `player/player.gd`, CharacterBody3D movement, jump, mouse look, ray interactions, animated hands and nameplates | Rebinding, sensitivity settings, seating, physical teammate interactions |
+| First-person player | `player/player.gd`, movement, jump, look, ray interactions, hands/nameplates; crosshair, focus glow, prompts, single-slot props and charged throw | Rebinding, sensitivity settings, seating, physical teammate interactions |
 | LAN lobby | `autoload/network.gd`, ENet UDP 7777, four slots, unique nicknames/colors, locally saved settings, create/join/leave terminals | Join timeout UX, hostile-input validation, latency/disconnect testing; no online discovery |
 | Replication | `world.tscn` MultiplayerSpawner; owner-authoritative movement with remote interpolation; host-owned wallet/table results | Movement is not host-authoritative as proposed by GDD; distance checks and rate limits remain |
-| Run loop | `autoload/game_state.gd`, REST/DAY, 300-second days, ten-day win, one failed-day extra life | Balance validation, complete run soak tests, full HUD day/life indicators |
+| Run loop | `autoload/game_state.gd`, REST/DAY, 300-second days, ten-day win, one failed-day extra life; HUD day/life indicators | Balance validation and complete-run soak tests |
 | Economy | Shared starting 1,000; first quota 1,250; later quota derived from previous wallet and multiplier array; extra-life resets to half day-start wallet | Economy simulation across policies and player counts; approved tuning sheet |
 | Bets | `tables/table_base.gd`, host deducts stake, wallet-derived min/max, presets, one active round per table; active-day gating and sender-derived ownership | Interaction distance checks and rate limits |
 | Chicken Cross | 12 lanes, host rolls busts, escalating payout, cash-out, basic hop/crash effects | Odds signage, sound, tuning. Anyone may push/cash out (`only_bettor_can_act=false`), unlike GDD exclusive seating |
@@ -18,10 +18,11 @@ the repeatable checks in [PLAYTESTING.md](PLAYTESTING.md).
 | Other tables | No Eggsweeper, roulette, or poker implementation | Add independently; rotation requires enough working tables |
 | Elevator transitions | `elevator/elevator.gd`, all connected peers aboard, quota gate, fades, forced timeout departure | Missing-player recovery, level polish; distinct apartment/rest/casino areas differ from GDD one room |
 | Reports | `ui/day_report.gd`, ledger, wallet chart, biggest wins/losses, player contributions, host skip | Usability/readability and synchronization testing |
-| Social slapstick | Hands reach toward interacted objects | No damage/hit cost, stun, carry-lock, drop, or throw |
+| Social slapstick | Hands reach toward interacted objects; loose objects support push/carry/throw | No teammate damage/hit cost, stun, carry-lock, drop, or throw |
 | Watched / rotation | Absent | Blessed/Cursed assignment, effects and anti-repeat rules; four-of-five table rotation |
-| Presentation | Primitive geometry, runtime screens, shared font, text announcements | Chicken character art, audio, house dialogue, environmental changes, feedback |
-| Accessibility / release | Cursor release only; no export presets or CI tests | Pause/settings UX, alternate inputs, contrast/text controls, captions, export checklist |
+| Presentation | Enclosed apartment/casino/rest rooms, windows/sky/roof, licensed Kenney furniture, distressed apartment story, fancy casino aisle, seven lore guides, focus feedback, day/life HUD | Chicken character art, audio, voiced House dialogue, reactive environmental changes |
+| Physics props | Host rigid bodies, 15 Hz client interpolation, one-slot pickup, push, host-timed charged throw, drop/disconnect/transition/reset recovery | Four-player latency and clutter playtest; no prop damage/consumables |
+| Accessibility / release | Crosshair, text prompts, named inventory feedback, scrollable lore and cursor release; no export presets or CI tests | Pause/settings UX, alternate inputs, contrast/text controls, captions, export checklist |
 
 ## Known technical risks
 
@@ -45,5 +46,6 @@ the repeatable checks in [PLAYTESTING.md](PLAYTESTING.md).
 
 Validation: clean Godot 4.7.1 import, headless main-scene smoke run, deterministic
 rules/economy/lifecycle suite, real two-process ENet loopback test and rendered
-table capture. See [CLUCKJACK.md](CLUCKJACK.md) for commands and limits. No human
+table capture; room/prop tests and a full-world ENet prop test. See
+[CLUCKJACK.md](CLUCKJACK.md) and [HOUSE_AND_HAND.md](HOUSE_AND_HAND.md) for commands and limits. No human
 playtest results or performance measurements have been collected.

@@ -4,6 +4,9 @@ const SPEED := 5.0
 const JUMP_VELOCITY := 6.5
 const GRAVITY := 20.0
 const MOUSE_SENS := 0.003
+const Highlight := preload("res://interaction/focus_highlight.gd")
+const Overlay := preload("res://ui/interaction_overlay.gd")
+const Prop := preload("res://interaction/physics_prop.gd")
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
@@ -14,6 +17,11 @@ var _net_yaw := 0.0
 var _net_pitch := 0.0
 var input_locked := false
 var hands: Hands
+var overlay: InteractionOverlay
+var _focus: Node
+var _highlight := Highlight.new()
+var _charge_started := -1
+var _last_push := 0
 
 func _update_nameplate() -> void:
 	$NamePlate.text = Network.player_name(str(name).to_int())
@@ -47,10 +55,19 @@ func _ready() -> void:
 	_update_nameplate()
 	_net_pos = position
 	if mine:
+		overlay = Overlay.new()
+		add_child(overlay)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
+		return
+	if overlay != null and overlay.reading:
+		overlay.scroll_lore(event)
+		if event.is_action_pressed("interact") or event.is_action_pressed("ui_cancel"):
+			overlay.close_lore()
+			input_locked = false
+		get_viewport().set_input_as_handled()
 		return
 	if input_locked:
 		return
@@ -58,6 +75,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		return
 	if event.is_action_pressed("ui_cancel"):
+		_cancel_charge()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		return
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -67,8 +85,66 @@ func _unhandled_input(event: InputEvent) -> void:
 		head.rotate_x(-event.relative.y * MOUSE_SENS)
 		head.rotation.x = clampf(head.rotation.x, deg_to_rad(-85), deg_to_rad(85))
 		hands.add_sway(event.relative)
+	_handle_carry_input(event)
 	if event.is_action_pressed("interact") or event.is_action_pressed("primary"):
 		_try_interact()
+
+func _handle_carry_input(event: InputEvent) -> void:
+	var held := Prop.held_by(get_tree(), str(name).to_int())
+	if event.is_action_pressed("drop_item") and held != null:
+		held.request_release.rpc_id(1, false)
+		_charge_started = -1
+	if event.is_action_pressed("throw_item") and held != null:
+		_charge_started = Time.get_ticks_msec()
+		held.request_charge.rpc_id(1)
+	if event.is_action_released("throw_item") and held != null and _charge_started >= 0:
+		held.request_release.rpc_id(1, true)
+		_charge_started = -1
+
+func _cancel_charge() -> void:
+	if _charge_started >= 0:
+		var held := Prop.held_by(get_tree(), str(name).to_int())
+		if held != null:
+			held.request_release.rpc_id(1, false)
+	_charge_started = -1
+
+func read_lore(title: String, text: String) -> void:
+	_cancel_charge()
+	input_locked = true
+	overlay.show_lore(title, text)
+
+func show_notice(message: String) -> void:
+	if overlay != null:
+		overlay.notice(message)
+
+func _process(_delta: float) -> void:
+	if not is_multiplayer_authority() or overlay == null:
+		return
+	var active := not input_locked and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	var target: Node = ray.get_collider() if active and ray.is_colliding() else null
+	if target != null and not target.has_method("interact"):
+		target = null
+	if target != _focus:
+		_focus = target
+		_highlight.set_target(_focus)
+	var prompt := ""
+	if is_instance_valid(_focus):
+		if _focus.has_method("get_interaction_prompt"):
+			prompt = _focus.get_interaction_prompt(self)
+		elif _focus is PressButton:
+			prompt = "Press " + _focus.label_text
+		elif _focus is TextTerminal:
+			prompt = "Edit " + _focus.title
+		else:
+			prompt = "Interact"
+	var held := Prop.held_by(get_tree(), str(name).to_int())
+	if held == null:
+		_charge_started = -1
+	var charge := clampf((Time.get_ticks_msec() - _charge_started) / 1250.0, 0.0, 1.0) if _charge_started >= 0 else -1.0
+	overlay.update_focus(prompt, held.item_name if held != null else "", charge, active)
+
+func _exit_tree() -> void:
+	_highlight.clear()
 
 func _try_interact() -> void:
 	if not ray.is_colliding():
@@ -86,6 +162,10 @@ func teleport_to(pos: Vector3, yaw: float) -> void:
 	if sender != 0 and sender != 1:
 		return   # only the host may move players
 	position = pos
+	_cancel_charge()
+	if overlay != null:
+		overlay.close_lore()
+		input_locked = false
 	rotation.y = yaw
 	_net_yaw = yaw
 	velocity = Vector3.ZERO
@@ -107,6 +187,13 @@ func _physics_process(delta: float) -> void:
 	velocity.x = direction.x * SPEED
 	velocity.z = direction.z * SPEED
 	move_and_slide()
+	if Time.get_ticks_msec() - _last_push > 180:
+		for i in get_slide_collision_count():
+			var collider = get_slide_collision(i).get_collider()
+			if collider is PhysicsProp:
+				collider.request_push.rpc_id(1)
+				_last_push = Time.get_ticks_msec()
+				break
 	hands.set_speed(Vector2(velocity.x, velocity.z).length() if is_on_floor() else 0.0)
 	_net_state.rpc(position, rotation.y, head.rotation.x)
 

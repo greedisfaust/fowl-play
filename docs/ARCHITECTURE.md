@@ -14,6 +14,8 @@ their scenes; avoid moving existing UID resources solely for cosmetic cleanup.
 | `elevator/` | Generated cab, occupancy, door state and ride request |
 | `tables/` | Shared TableBase, bet panel, PressButton, Screen3D and table subfolders |
 | `ui/` | HUD, fade, day report and wallet chart |
+| `environment/` | Deterministic room dressing, colliding shells, imported furniture and lore placement |
+| `interaction/` | Host-owned physics props, local focus highlight, readable lore plaques |
 
 ## Table request lifecycle
 
