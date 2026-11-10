@@ -63,6 +63,7 @@ func _on_player_action(who: int, action: String, data: Dictionary) -> void:
 		_end_round(_payout_for(lane))
 
 func _proceed() -> void:
+	var generation := round_generation
 	_busy = true
 	lane += 1
 	var chance: float = BUST_CHANCE[lane - 1]
@@ -70,6 +71,8 @@ func _proceed() -> void:
 	round_info = {"depth": lane, "bust": busted, "chance": chance}
 	emit_event("hop", {"lane": lane, "bust": busted})
 	await get_tree().create_timer(HOP_TIME + 0.5).timeout
+	if generation != round_generation or not running:
+		return
 	if busted:
 		await _end_round(0)
 	elif lane == LANES:
@@ -78,11 +81,21 @@ func _proceed() -> void:
 		_busy = false
 
 func _end_round(payout: int) -> void:
+	var generation := round_generation
 	_busy = true
 	emit_event("round_over", {"payout": payout})
 	await get_tree().create_timer(1.0).timeout
+	if generation != round_generation or not running:
+		return
 	finish_round(payout)
 	_busy = false
+
+func _on_table_reset() -> void:
+	lane = 0
+	_busy = false
+	chicken.visible = true
+	chicken.position = slot_position(0) + CHICKEN_REST
+	status.set_text("PLACE YOUR BET", display_name)
 
 func _payout_for(l: int) -> int:
 	var mult: float = MULTIPLIER[l - 1]

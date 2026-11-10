@@ -177,9 +177,10 @@ func _ride(from: Elevator, forced := false) -> void:
 	if going_out:
 		multiplayer.multiplayer_peer.refuse_new_connections = true   # closed for the whole run
 	else:
+		GameState.running = false # close betting while existing rounds settle
 		await _settle_tables()
-		var outcome := GameState.preview_outcome()   # decided now, so we know where everyone goes
-		var run_over := outcome == GameState.Outcome.GAME_OVER or outcome == GameState.Outcome.WON
+		var outcome: int = GameState.preview_outcome()   # decided now, so we know where everyone goes
+		var run_over: bool = outcome == GameState.Outcome.GAME_OVER or outcome == GameState.Outcome.WON
 		to = lobby_elevator if run_over else rest_elevator
 	if not forced:
 		from.close_doors.rpc()
@@ -212,6 +213,8 @@ func _send_all_to(dest: Elevator) -> void:
 			player.teleport_to.rpc_id(id, dest.arrival_position(slot), dest.arrival_yaw())
 
 func _settle_tables() -> void:
+	for t in get_tree().get_nodes_in_group("tables"):
+		t.settle_for_day()
 	# let a round in progress finish so its payout isn't lost, but never wait forever
 	var waited := 0.0
 	while waited < 10.0 and _any_table_running():

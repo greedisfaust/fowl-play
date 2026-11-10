@@ -1,6 +1,7 @@
 # Implementation audit
 
-Baseline: `a358ecd`, audited 10 November 2026 against GDD v3. **Implemented** here
+Baseline: `a358ecd`, audited 10 November 2026 against GDD v3; updated for the
+Cluckjack feature. **Implemented** here
 means present in source; multiplayer reliability and player enjoyment still need
 the repeatable checks in [PLAYTESTING.md](PLAYTESTING.md).
 
@@ -11,9 +12,9 @@ the repeatable checks in [PLAYTESTING.md](PLAYTESTING.md).
 | Replication | `world.tscn` MultiplayerSpawner; owner-authoritative movement with remote interpolation; host-owned wallet/table results | Movement is not host-authoritative as proposed by GDD; distance checks and rate limits remain |
 | Run loop | `autoload/game_state.gd`, REST/DAY, 300-second days, ten-day win, one failed-day extra life | Balance validation, complete run soak tests, full HUD day/life indicators |
 | Economy | Shared starting 1,000; first quota 1,250; later quota derived from previous wallet and multiplier array; extra-life resets to half day-start wallet | Economy simulation across policies and player counts; approved tuning sheet |
-| Bets | `tables/table_base.gd`, host deducts stake, wallet-derived min/max, presets, one active round per table | Reject out-of-phase starts, spoofed round ownership, malformed RPC inputs |
+| Bets | `tables/table_base.gd`, host deducts stake, wallet-derived min/max, presets, one active round per table; active-day gating and sender-derived ownership | Interaction distance checks and rate limits |
 | Chicken Cross | 12 lanes, host rolls busts, escalating payout, cash-out, basic hop/crash effects | Odds signage, sound, tuning. Anyone may push/cash out (`only_bettor_can_act=false`), unlike GDD exclusive seating |
-| Blackjack | Specified in GDD, no scene or rules yet | Next feature: **Cluckjack**, see roadmap |
+| Blackjack | **Cluckjack**: 52-card host deck, Hit/Stand, soft aces, naturals, dealer 17, public cards/totals, gross payouts and report integration | Four-player human LAN/playability pass; no advanced blackjack options |
 | Other tables | No Eggsweeper, roulette, or poker implementation | Add independently; rotation requires enough working tables |
 | Elevator transitions | `elevator/elevator.gd`, all connected peers aboard, quota gate, fades, forced timeout departure | Missing-player recovery, level polish; distinct apartment/rest/casino areas differ from GDD one room |
 | Reports | `ui/day_report.gd`, ledger, wallet chart, biggest wins/losses, player contributions, host skip | Usability/readability and synchronization testing |
@@ -24,18 +25,17 @@ the repeatable checks in [PLAYTESTING.md](PLAYTESTING.md).
 
 ## Known technical risks
 
-- Clean import using installed Godot 4.7.1 reports type-inference parse errors in
-  `player/player.gd:23`, `world.gd:181-182`, and `lobby/color_board.gd:12` where
-  values come from autoloads. Startup is blocked until explicit types are added.
-  The editor process can return exit code 0 despite these script errors; inspect
-  its output rather than relying on the exit code alone.
-- `TableBase.start_round` is exposed as `any_peer` and accepts `who`; derive peer
-  identity at the RPC boundary instead. Start gating must consider both phase
-  and whether the day is running. Existing actions must settle after timeout.
-- `world.gd` waits up to ten seconds then forfeits unfinished rounds. New games
-  must define what a timeout means and cannot pay again after forced settlement.
-- Table state is not cleared by `GameState.reset_run()`. Reset/leave must not
-  carry an unfinished hand or delayed payout into a new run.
+- Baseline Godot 4.7.1 type-inference parse errors in player, world and color
+  board scripts are fixed. The test runner checks error output as well as exit
+  codes because Godot can report script errors while returning zero.
+- `TableBase.start_round` is now host-local, with peer identity derived at the
+  request boundary. New rounds require an active running day. Proximity and RPC
+  rate limits remain unimplemented.
+- `world.gd` asks tables to settle at departure, then waits up to ten seconds and
+  forfeits any remaining rounds. Cluckjack auto-stands immediately; Chicken
+  Cross retains its forfeit policy. Delayed Cross payouts are invalidated on reset.
+- Session reset now clears table state and Cluckjack hands. New table types must
+  implement their own reset/settlement hooks and avoid delayed stale mutations.
 - `_full_state` does not include phase or ledger. Joining is blocked in runs;
   reconnect or join-in-progress needs a deliberate complete snapshot design.
 - K/L developer teleport changes host phase without the normal transition. Keep
@@ -43,4 +43,7 @@ the repeatable checks in [PLAYTESTING.md](PLAYTESTING.md).
 - Existing font provenance is unknown. A `.ttf` being in Git does not establish
   redistribution rights. See [asset register](ASSETS.md).
 
-No playtest results or performance measurements have been collected by this audit.
+Validation: clean Godot 4.7.1 import, headless main-scene smoke run, deterministic
+rules/economy/lifecycle suite, real two-process ENet loopback test and rendered
+table capture. See [CLUCKJACK.md](CLUCKJACK.md) for commands and limits. No human
+playtest results or performance measurements have been collected.

@@ -5,8 +5,8 @@ small playable increment at a time and update [STATUS.md](STATUS.md).
 
 | Priority | Deliverable | How to implement | Acceptance |
 | --- | --- | --- | --- |
-| P0 next | **Cluckjack** table | Inherit TableBase; isolated 52-card engine; host shuffles/deals; Hit/Stand buttons; visible hands/totals; gross payouts; log result | Aces, natural vs drawn 21, ties, busts, dealer soft 17, duplicate actions, timeout/disconnect/reset covered; solo and LAN checklist |
-| P0 | Lifecycle and RPC integrity | Restrict round-start helper to host-local calls, validate sender/phase/bet, prevent double settlement and reset stale hands | Invalid requests never change wallet; leaving/restarting cannot pay an old round |
+| Delivered; human LAN pass pending | **Cluckjack** table | TableBase scene with isolated 52-card model, host draws, Hit/Stand, public hands/totals, gross payout and ledger | Automated rules/lifecycle and ENet loopback pass; complete human LAN checklist next |
+| Delivered core; hardening remains | Lifecycle and RPC integrity | Host-local start helper, sender/phase/bet checks, single settlement, table reset and delayed-payout invalidation | Automated invalid-request and reset checks pass; add proximity/rate limits later |
 | P1 | Social intervention slice | Host-validate nearby hit, charge quota-based hit cost, add timed stun; then carry/drop/throw states with camera look retained | Two peers can stop/release a gambler; disconnect releases carried player; no permanent input lock |
 | P1 | Playable economy | Simulate conservative/aggressive/random table policies, then run timed LAN sessions | Record success distribution, round durations, reasons for failures and changes; no unmeasured difficulty claims |
 | P1 | Readable onboarding/settings | Aim prompt, table rules, active bettor, disabled actions, day/life HUD; sensitivity/rebind and readable UI scale | New players place and resolve a bet without coaching; text and symbols work without color |

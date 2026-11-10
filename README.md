@@ -12,11 +12,14 @@ the current code. This is a prototype, not a finished release.
    compatibility with older versions has not yet been established.
 2. Import `dev-fowl-play/project.godot` in Godot, let the initial import finish,
    and press **F6** on `world.tscn` or **F5** for the configured main scene.
+   Clean import and smoke checks pass on Godot **4.7.1**.
 3. In the apartment, enter a nickname and choose a color. Play solo, or use the
    lobby console to host. Friends enter the host's LAN IPv4 address at the join
    terminal. ENet uses **UDP 7777**; allow the game through the local firewall.
 4. Gather all connected players in the elevator and press its button to start.
-   In the casino, aim at the bet keypad and table buttons to play Chicken Cross.
+   In the casino, aim at the bet keypad and table buttons to play Chicken Cross
+   or **Cluckjack**, the card table beside it. Select a bet, DEAL, then HIT or
+   STAND. [Cluckjack rules and developer checks](docs/CLUCKJACK.md).
 5. Meet quota and gather in the casino elevator to finish early, or wait for the
    timer. A day report precedes the rest room or return to the apartment.
 
@@ -45,6 +48,7 @@ alternate bindings, combat, carrying, throwing, and seating are not implemented.
 - [Prioritized implementation plan](docs/ROADMAP.md)
 - [Playability, comparable games, and test protocol](docs/PLAYTESTING.md)
 - [Assets and attribution register](docs/ASSETS.md)
+- [Cluckjack rules, integration and test commands](docs/CLUCKJACK.md)
 
 The supplied **GAMDES1_GDD_Fowl-Play_v3.docx**, dated 30 October 2026, describes
 design intent. Code and the status document describe shipped behavior. Record

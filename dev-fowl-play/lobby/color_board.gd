@@ -9,7 +9,7 @@ const PITCH := 0.2
 var _buttons: Array[PressButton] = []
 
 func _ready() -> void:
-	var count := Network.PALETTE.size()
+	var count: int = Network.PALETTE.size()
 	var plate := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = Vector3(count * PITCH + 0.1, 0.3, 0.08)
