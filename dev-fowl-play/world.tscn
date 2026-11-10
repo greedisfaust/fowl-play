@@ -6,7 +6,6 @@
 [ext_resource type="PackedScene" uid="uid://ckfabxbl2tc7x" path="res://lobby/text_terminal.tscn" id="4_aqk2v"]
 [ext_resource type="PackedScene" uid="uid://yts8y1ieyhvd" path="res://tables/screen_3d.tscn" id="4_dwbse"]
 [ext_resource type="PackedScene" uid="uid://datx111tb4hvp" path="res://lobby/lobby_console.tscn" id="5_036b0"]
-[ext_resource type="Script" uid="uid://du8oc7qsxmdjn" path="res://elevator/elevator.gd" id="5_gbfbk"]
 [ext_resource type="PackedScene" uid="uid://d3c6fhjpfj2yn" path="res://elevator/elevator.tscn" id="7_pkg7o"]
 [ext_resource type="PackedScene" uid="uid://c5rb5nb3dfhwl" path="res://lobby/color_board.tscn" id="9_ioo17"]
 
@@ -83,7 +82,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 2)
 
 [node name="Elevator" parent="Casino" unique_id=1319015752 instance=ExtResource("7_pkg7o")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, -18.9)
-script = ExtResource("5_gbfbk")
 
 [node name="Apartment" type="Node3D" parent="." unique_id=694171853]
 
@@ -149,7 +147,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 1.3, -5.8)
 
 [node name="Elevator" parent="Apartment" unique_id=351637617 instance=ExtResource("7_pkg7o")]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 9.85)
-script = ExtResource("5_gbfbk")
 
 [node name="ColorBoard" parent="Apartment" unique_id=557179741 instance=ExtResource("9_ioo17")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0.85, -5.86)
@@ -207,4 +204,3 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
 
 [node name="Elevator" parent="Rest" unique_id=713055418 instance=ExtResource("7_pkg7o")]
 transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 9.85)
-script = ExtResource("5_gbfbk")

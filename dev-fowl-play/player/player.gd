@@ -13,17 +13,20 @@ var _net_pos := Vector3.ZERO
 var _net_yaw := 0.0
 var _net_pitch := 0.0
 var input_locked := false
+var hands: Hands
 
 func _update_nameplate() -> void:
 	$NamePlate.text = Network.player_name(str(name).to_int())
 	_apply_color()
-	
+
 func _apply_color() -> void:
 	var c := Network.player_color(str(name).to_int())
 	var m := StandardMaterial3D.new()   # a new one per player, because the scene's material is shared
 	m.albedo_color = c
 	$Body.material_override = m
 	$NamePlate.modulate = c
+	if hands:
+		hands.set_color(c)
 
 func _enter_tree() -> void:
 	set_multiplayer_authority(str(name).to_int())
@@ -37,6 +40,9 @@ func _ready() -> void:
 	if Style.font:
 		$NamePlate.font = Style.font
 	$NamePlate.visible = not mine
+	hands = Hands.new()
+	hands.world_mode = not mine   # your own hands are first-person; everyone else's sit on the body
+	(camera if mine else head).add_child(hands)
 	Network.players_changed.connect(_update_nameplate)
 	_update_nameplate()
 	_net_pos = position
@@ -60,6 +66,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		rotate_y(-event.relative.x * MOUSE_SENS)
 		head.rotate_x(-event.relative.y * MOUSE_SENS)
 		head.rotation.x = clampf(head.rotation.x, deg_to_rad(-85), deg_to_rad(85))
+		hands.add_sway(event.relative)
 	if event.is_action_pressed("interact") or event.is_action_pressed("primary"):
 		_try_interact()
 
@@ -68,6 +75,9 @@ func _try_interact() -> void:
 		return
 	var target = ray.get_collider()
 	if target and target.has_method("interact"):
+		var p := ray.get_collision_point()
+		hands.reach(p)
+		_net_reach.rpc(p)   # tell everyone else where to swing this player's hand
 		target.interact(self)
 
 @rpc("any_peer", "call_local", "reliable")
@@ -97,6 +107,7 @@ func _physics_process(delta: float) -> void:
 	velocity.x = direction.x * SPEED
 	velocity.z = direction.z * SPEED
 	move_and_slide()
+	hands.set_speed(Vector2(velocity.x, velocity.z).length() if is_on_floor() else 0.0)
 	_net_state.rpc(position, rotation.y, head.rotation.x)
 
 @rpc("authority", "call_remote", "unreliable")
@@ -104,3 +115,7 @@ func _net_state(pos: Vector3, yaw: float, pitch: float) -> void:
 	_net_pos = pos
 	_net_yaw = yaw
 	_net_pitch = pitch
+
+@rpc("authority", "call_remote", "reliable")
+func _net_reach(point: Vector3) -> void:
+	hands.reach(point)   # runs on everyone else's copy of this player

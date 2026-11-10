@@ -1,3 +1,6 @@
 [gd_scene format=3 uid="uid://d3c6fhjpfj2yn"]
 
+[ext_resource type="Script" uid="uid://du8oc7qsxmdjn" path="res://elevator/elevator.gd" id="1_wytmq"]
+
 [node name="Elevator" type="Node3D" unique_id=1319015752]
+script = ExtResource("1_wytmq")
