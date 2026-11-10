@@ -22,6 +22,8 @@ var _focus: Node
 var _highlight := Highlight.new()
 var _charge_started := -1
 var _last_push := 0
+var _hover_sent := false
+var _hover_clock := 0.0
 
 func _update_nameplate() -> void:
 	$NamePlate.text = Network.player_name(str(name).to_int())
@@ -117,7 +119,7 @@ func show_notice(message: String) -> void:
 	if overlay != null:
 		overlay.notice(message)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not is_multiplayer_authority() or overlay == null:
 		return
 	var active := not input_locked and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
@@ -127,6 +129,13 @@ func _process(_delta: float) -> void:
 	if target != _focus:
 		_focus = target
 		_highlight.set_target(_focus)
+		hands.set_hover(target != null, ray.get_collision_point())
+		var on := target != null
+		_hover_clock -= delta
+		if on != _hover_sent or (on and _hover_clock <= 0.0):
+			_hover_sent = on
+			_hover_clock = 0.07
+			_net_hover.rpc(on, ray.get_collision_point() if on else Vector3.ZERO)
 	var prompt := ""
 	if is_instance_valid(_focus):
 		if _focus.has_method("get_interaction_prompt"):
@@ -202,6 +211,10 @@ func _net_state(pos: Vector3, yaw: float, pitch: float) -> void:
 	_net_pos = pos
 	_net_yaw = yaw
 	_net_pitch = pitch
+
+@rpc("authority", "call_remote", "unreliable")
+func _net_hover(on: bool, point: Vector3) -> void:
+	hands.set_hover(on, point)
 
 @rpc("authority", "call_remote", "reliable")
 func _net_reach(point: Vector3) -> void:

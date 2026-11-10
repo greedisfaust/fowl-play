@@ -8,14 +8,17 @@ var _charge: ProgressBar
 var _reader: PanelContainer
 var _title: Label
 var _body: Label
-var _reticle: Label
+var _reticle: Crosshair
 var _scroll: ScrollContainer
 var _notice_until := 0
 var _notice := ""
 
 func _ready() -> void:
 	layer = 4
-	_reticle = _label("·", Vector2(0.5, 0.5), Vector2(-12, -23), Vector2(24, 46), 32)
+	_reticle = Crosshair.new()
+	_reticle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_reticle)
+	_reticle.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_prompt = _label("", Vector2(0.5, 0.5), Vector2(-320, 36), Vector2(640, 70), 19)
 	_inventory = _label("", Vector2(0.5, 1), Vector2(-400, -80), Vector2(800, 60), 18)
 	_charge = ProgressBar.new()
@@ -92,8 +95,7 @@ func _label(text: String, anchor: Vector2, offset: Vector2, size: Vector2, font_
 
 func update_focus(prompt: String, held: String, charge: float, active: bool) -> void:
 	_reticle.visible = active and not reading
-	_reticle.text = "+" if prompt != "" else "·"
-	_reticle.modulate = Color("ffdf8d") if prompt != "" else Color.WHITE
+	_reticle.set_hover(prompt != "")
 	_prompt.visible = active and not reading
 	_prompt.text = "[E / LMB] " + prompt if prompt != "" else ""
 	if Time.get_ticks_msec() < _notice_until:
