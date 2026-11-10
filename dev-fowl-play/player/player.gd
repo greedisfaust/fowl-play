@@ -20,7 +20,7 @@ func _update_nameplate() -> void:
 	_apply_color()
 
 func _apply_color() -> void:
-	var c := Network.player_color(str(name).to_int())
+	var c: Color = Network.player_color(str(name).to_int())
 	var m := StandardMaterial3D.new()   # a new one per player, because the scene's material is shared
 	m.albedo_color = c
 	$Body.material_override = m

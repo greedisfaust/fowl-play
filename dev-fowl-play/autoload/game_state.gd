@@ -8,6 +8,7 @@ signal day_ended
 signal phase_changed
 signal quota_changed(new_value: int)
 signal day_result(outcome: int, finished_day: int)
+signal run_reset
 
 enum Outcome { PASSED, EXTRA_LIFE_SPENT, GAME_OVER, WON }
 enum Phase { REST, DAY }
@@ -118,6 +119,7 @@ func preview_outcome() -> int:   # host only: what end_day() will decide, withou
 	return Outcome.EXTRA_LIFE_SPENT if extra_life else Outcome.GAME_OVER
 
 func reset_run() -> void:   # local only: a fresh run (used when a player drops to solo)
+	run_reset.emit()
 	running = false
 	phase = Phase.REST
 	day = 1
@@ -163,10 +165,11 @@ func _process(delta: float) -> void:
 		running = false
 		day_ended.emit()
 
-func log_round(player_id: int, table: String, bet: int, payout: int, info := {}) -> void:
+func log_round(player_id: int, table: String, bet: int, payout: int, info := {}, identity := {}) -> void:
 	ledger.append({
 		"day": day, "t": day_elapsed(), "player": player_id,
-		"name": Network.player_name(player_id), "color": Network.player_color(player_id),
+		"name": identity.get("name", Network.player_name(player_id)),
+		"color": identity.get("color", Network.player_color(player_id)),
 		"table": table, "bet": bet, "payout": payout, "info": info,
 	})
 
