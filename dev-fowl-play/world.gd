@@ -13,6 +13,7 @@ var _riding := false   # host only: true while an elevator ride is playing
 var _report: DayReport
 
 func _ready() -> void:
+	add_to_group("game_world")
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(func() -> void: $HUD.announce("JOINED THE LOBBY"))
@@ -207,6 +208,8 @@ func _ride(from: Elevator, forced := false) -> void:
 func _send_all_to(dest: Elevator) -> void:
 	dest.close_doors_instant.rpc()
 	for id in Network.players:
+		for prop in get_tree().get_nodes_in_group("physics_props"):
+			prop.drop_for_transition(id)
 		var player = $Players.get_node_or_null(str(id))
 		if player:
 			var slot: int = Network.players[id]

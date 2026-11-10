@@ -6,10 +6,11 @@
 | Godot project icon | `dev-fowl-play/icon.svg` | Existing Godot-style project icon; provenance not recorded in repo | Verify applicable Godot artwork terms before public packaging |
 | Primitive world, hands, tables, generated screens | Scene and script resources | Existing project-authored content; repository has no overall license | Team confirms ownership and code/art distribution terms |
 | Cluckjack cards, board and signs | `tables/cluckjack/` | Procedural geometry and text created for this project; no external pack imported | Covered by whatever license the project owners adopt |
+| Kenney Furniture Kit 2.0, 13 GLB subset | `dev-fowl-play/assets/kenney/furniture/` | [Kenney publisher page](https://kenney.nl/assets/furniture-kit), downloaded 10 November 2026; CC0 | Original `LICENSE.txt`, source record and SHA256 manifest included; unchanged binaries, runtime scaling/collision proxies |
+| Room shells, dusk sky, city silhouettes, damage marks, lore plaques, cups/chips | `environment/`, `interaction/` | Created for this project using Godot geometry, materials and text | Covered by the project owners' eventual license |
 
-No new marketplace asset is required for the first Cluckjack slice: generated
-card faces, felt and signage can match the primitive prototype without adding
-an unverified dependency.
+Cluckjack card faces and signs remain procedural. The room/prop update imports
+the Kenney subset above; no other marketplace packs are installed.
 
 Candidate for a later art pass: [Kenney Playing Cards Pack](https://kenney.nl/assets/playing-cards-pack),
 whose publisher page lists Creative Commons CC0 (checked 10 November 2026).

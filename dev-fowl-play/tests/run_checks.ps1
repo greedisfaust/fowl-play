@@ -31,6 +31,8 @@ $import = Start-Check 'import' '--editor --import --quit'
 Complete-Check $import 'import'
 $rules = Start-Check 'rules' 'res://tests/test_cluckjack.tscn'
 Complete-Check $rules 'rules'
+$house = Start-Check 'house' 'res://tests/test_house.tscn'
+Complete-Check $house 'house'
 $smoke = Start-Check 'smoke' '--quit-after 120'
 Complete-Check $smoke 'smoke'
 $hostCheck = Start-Check 'host' 'res://tests/test_cluckjack_network.tscn -- --host'
@@ -41,4 +43,11 @@ foreach ($entry in @(@{ Process = $hostCheck; Name = 'host' }, @{ Process = $cli
     try { Complete-Check $entry.Process $entry.Name } catch { $networkErrors += $_ }
 }
 if ($networkErrors.Count) { throw ($networkErrors -join "`n") }
+$physicsHost = Start-Check 'physics-host' 'res://tests/test_house_network.tscn -- --host'
+$physicsClient = Start-Check 'physics-client' 'res://tests/test_house_network.tscn -- --client'
+$physicsErrors = @()
+foreach ($entry in @(@{ Process = $physicsHost; Name = 'physics-host' }, @{ Process = $physicsClient; Name = 'physics-client' })) {
+    try { Complete-Check $entry.Process $entry.Name } catch { $physicsErrors += $_ }
+}
+if ($physicsErrors.Count) { throw ($physicsErrors -join "`n") }
 Write-Output "All checks passed. Logs: $logPath"

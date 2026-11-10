@@ -1,6 +1,6 @@
 # Cluckjack
 
-Cluckjack is the chicken-named blackjack table at casino-local `(5, 0.2, 0)`,
+Cluckjack is the chicken-named blackjack table at casino-local `(5, 0.5, 4)`,
 beside Chicken Cross. Aim at the shared keypad, choose a wager, then press DEAL
 with E or left click. Only the player who deals can HIT or STAND. Walking away
 does not transfer ownership; return to finish, or the day-end policy settles it.

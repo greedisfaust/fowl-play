@@ -64,6 +64,15 @@ primary={
 ]
 }
 
+drop_item={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":71)]
+}
+throw_item={
+"deadzone": 0.2,
+"events": [Object(InputEventMouseButton,"button_index":2)]
+}
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
