@@ -5,7 +5,7 @@ const START_X := -1.38
 const TILE_SPACING := 0.23
 const HOP_TIME := 0.35
 const CHICKEN_REST := Vector3(0, 0.17, 0)
-
+# TEST 123
 const BUST_CHANCE := [0.07, 0.09, 0.11, 0.14, 0.17, 0.20, 0.24, 0.28, 0.32, 0.37, 0.42, 0.48]
 # TEMP: the GDD only gives the ends (1.3x and 15x). Paste your economy-sheet numbers here.
 const MULTIPLIER := [1.3, 1.6, 2.0, 2.5, 3.2, 4.0, 5.0, 6.2, 7.7, 9.6, 12.0, 15.0]
