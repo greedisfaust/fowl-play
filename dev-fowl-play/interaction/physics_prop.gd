@@ -178,8 +178,14 @@ func _sync_holder(who: int, pos: Vector3, rot: Quaternion) -> void:
 	_net_rotation = rot
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
-	# NOTE: the Carrier component owns hold-side tracking now.
-	# PhysicsProp no longer calls player._set_carry_item/_clear_carry_item here.
+	# notify the holding player so they track carry mode via Carrier
+	var player := _player(who)
+	if who != 0 and player != null:
+		player._set_carry_item(self)
+	elif old_holder != 0:
+		var old_player := _player(old_holder)
+		if old_player != null:
+			old_player._clear_carry_item()
 
 @rpc("authority", "call_remote", "unreliable_ordered")
 func _sync_motion(pos: Vector3, rot: Quaternion) -> void:
