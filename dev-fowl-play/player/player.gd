@@ -126,16 +126,20 @@ func _process(delta: float) -> void:
 	var target: Node = ray.get_collider() if active and ray.is_colliding() else null
 	if target != null and not target.has_method("interact"):
 		target = null
+	var on := target != null
 	if target != _focus:
 		_focus = target
 		_highlight.set_target(_focus)
-		hands.set_hover(target != null, ray.get_collision_point())
-		var on := target != null
-		_hover_clock -= delta
-		if on != _hover_sent or (on and _hover_clock <= 0.0):
-			_hover_sent = on
-			_hover_clock = 0.07
-			_net_hover.rpc(on, ray.get_collision_point() if on else Vector3.ZERO)
+	var point := ray.get_collision_point() if on else Vector3.ZERO
+	hands.set_hover(on, point)
+	_hover_clock -= delta
+	if on != _hover_sent:
+		_hover_sent = on
+		_hover_clock = 0.07
+		_net_hover_state.rpc(on, point)      # reliable: on/off can never get lost
+	elif on and _hover_clock <= 0.0:
+		_hover_clock = 0.07
+		_net_hover_point.rpc(point)          # unreliable: just keeps the finger tracking
 	var prompt := ""
 	if is_instance_valid(_focus):
 		if _focus.has_method("get_interaction_prompt"):
@@ -212,9 +216,13 @@ func _net_state(pos: Vector3, yaw: float, pitch: float) -> void:
 	_net_yaw = yaw
 	_net_pitch = pitch
 
-@rpc("authority", "call_remote", "unreliable")
-func _net_hover(on: bool, point: Vector3) -> void:
+@rpc("authority", "call_remote", "reliable")
+func _net_hover_state(on: bool, point: Vector3) -> void:
 	hands.set_hover(on, point)
+
+@rpc("authority", "call_remote", "unreliable")
+func _net_hover_point(point: Vector3) -> void:
+	hands.update_hover_point(point)
 
 @rpc("authority", "call_remote", "reliable")
 func _net_reach(point: Vector3) -> void:
