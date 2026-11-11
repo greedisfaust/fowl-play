@@ -21,8 +21,8 @@ signal released(threw: bool)    # emitted when we let go of what we carry
 # (CharacterBody3D) can't both extend Carryable — they duck-type the
 # Carryable contract instead.
 var carried: Variant = null     # what we're holding; null when empty
-var charge_started: float := -1.0
-var charge_held: bool := false
+var charge_started: float = -1.0
+var charge_held: bool = false
 var owner: Node3D = null        # the player that owns this Carrier
 
 const CHARGE_MS := 1250.0       # how long a full-throw charge takes

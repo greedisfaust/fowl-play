@@ -172,7 +172,7 @@ func _apply_carry_throw(charge: float) -> void:
 	if not carrier.is_carrying():
 		return
 	var c: Node = carrier.carried as Node
-	var direction := -get_node("Head").global_basis.z
+	var direction: Vector3 = -get_node("Head").global_basis.z
 	if c is PhysicsProp:
 		# item: server-mediated throw via request_release (server applies
 		# direction from holder's head + speed from its own charge timing).
