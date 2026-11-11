@@ -8,6 +8,7 @@ const Highlight := preload("res://interaction/focus_highlight.gd")
 const Interactable := preload("res://interaction/interactable.gd")
 const Overlay := preload("res://ui/interaction_overlay.gd")
 const Prop := preload("res://interaction/physics_prop.gd")
+const Carrier := preload("res://player/carrier.gd")
 
 const PUNCH_CHARGE_MS := 500      # hold Q this long for a charged punch
 const PARRY_COOLDOWN := 1.5       # seconds before F can parry again
@@ -41,14 +42,11 @@ var _launch_until := 0.0            # time until thrown-player flight ends (pres
 var _cam_shake_until := 0.0         # time until camera shake expires
 var _cam_shake_intensity := 1.0
 # ---------- unified carry ----------
-var _carry_mode := "none"           # "none" | "item" | "player"
-var _carried_item: PhysicsProp = null  # item I'm carrying (local ref)
-var _carried_player_id := 0         # peer id of player I'm carrying
-var _carrier_id := 0                # peer id of who is carrying me (set when I'm downed)
-var _carry_charge_started := -1     # charge timer for throwing whatever I carry
-var _carry_charge_held := false     # true while Q is held to charge a throw
-var _pickup_attempting := false     # true on the frame Q initiates a pickup (blocks punch charge)
-var _just_picked_up := false        # set when Q resulted in a pickup; blocks punch charge
+var carrier: Carrier = Carrier.new()   # single code path for item + downed-player carry (Phase 3+)
+var _carrier_id := 0                   # peer id of who is carrying me (set when I'm downed)
+var _carried_player_id := 0            # peer id of downed player I'm carrying (Phase 4 folds into Carrier)
+var _pickup_attempting := false        # true on the frame Q initiates a pickup (blocks punch charge)
+var _just_picked_up := false           # set when Q resulted in a pickup; blocks punch charge
 
 func _update_nameplate() -> void:
 	$NamePlate.text = Network.player_name(str(name).to_int())
@@ -124,44 +122,35 @@ func _unhandled_input(event: InputEvent) -> void:
 			_try_interact()
 
 func _resolve_carry_state() -> void:
-	# Safety: if we think we're carrying but the reference is gone, reset carry mode
-	# so G-drop and Q-throw work again instead of leaving you stuck.
-	if _carry_mode == "item" and _carried_item == null:
-		_carry_mode = "none"
-		_charge_started = -1
-	elif _carry_mode == "player" and _carried_player_id == 0:
-		_carry_mode = "none"
-		_charge_started = -1
+	# Safety: if our Carrier reference is gone (freed prop, disconnect),
+	# clear it so G-drop and Q-throw work again instead of leaving you stuck.
+	if carrier.carried != null and not is_instance_valid(carrier.carried):
+		carrier.drop(false)
 
 func is_stunned() -> bool:
 	return _knocked_down_until > Time.get_ticks_msec() / 1000.0 or _carrier_id != 0
 
 func _handle_carry_input(event: InputEvent) -> void:
-	_resolve_carry_state()
 	# --- cannot do anything while being carried ourselves ---
 	if _carrier_id != 0:
 		return
 	# --- dropping what we carry (G) ---
 	if event.is_action_pressed("drop_item"):
-		if _carry_mode == "item" and _carried_item != null:
-			_carried_item.request_release.rpc_id(1, false)
-			_carried_item = null
-			_carry_mode = "none"
-			_charge_started = -1
-		elif _carry_mode == "player" and _carried_player_id != 0:
-			# release carried player without throwing
-			_launch_carried_player.rpc_id(_carried_player_id, Vector3.ZERO, 0.0, _carried_player_id)
-			_carried_player_id = 0
-			_carry_mode = "none"
-			_charge_started = -1
+		if carrier.is_carrying():
+			var c: Node = carrier.carried as Node
+			if c is PhysicsProp and c.holder_id != 0:
+				# item: server-mediated release (drop, no throw)
+				c.request_release.rpc_id(1, false)
+			carrier.drop(false)
 		return
 	# --- charging / throwing (hold Q or RMB, release) ---
-	if _carry_mode != "none":
+	if carrier.is_carrying():
 		if event.is_action_pressed("throw_item") or event.is_action_pressed("punch_charge"):
-			_start_carry_charge()
+			carrier.start_charge()
 		if event.is_action_released("throw_item") or event.is_action_released("punch_charge"):
-			if _carry_charge_held:
-				_release_carry_charge()
+			var charge: float = carrier.release_charge()
+			if charge >= 0.0:
+				_apply_carry_throw(charge)
 		return
 	# --- empty-handed: Q picks up looked-at target (item or downed player) ---
 	# NOTE: _raycast_hit() filters for take_punch() targets, which items
@@ -171,40 +160,34 @@ func _handle_carry_input(event: InputEvent) -> void:
 		_pickup_attempting = true
 		var target := ray.get_collider() if ray.is_colliding() else null
 		if target != null and Interactable.can(target):
-			target.interact(self)
-			_just_picked_up = true   # block punch charge this frame
+			var picked: bool = carrier.pickup(target)
+			if picked:
+				_just_picked_up = true   # block punch charge this frame
 		_pickup_attempting = false
 
-func _start_carry_charge() -> void:
-	if _carry_mode == "none" or _carry_charge_held or _pickup_attempting:
+func _apply_carry_throw(charge: float) -> void:
+	# Single throw path for item or downed player, replicated appropriately.
+	# In Phase 3 the downed player still uses the legacy _carried_player_id
+	# flow; Phase 4 folds it fully into Carrier.get_throw_speed().
+	if not carrier.is_carrying():
 		return
-	_carry_charge_held = true
-	_carry_charge_started = Time.get_ticks_msec()
-	_charge_started = _carry_charge_started   # drives the throw-meter UI
-
-func _release_carry_charge() -> void:
-	if not _carry_charge_held or _carry_mode == "none":
-		return
-	_carry_charge_held = false
-	var held_ms := Time.get_ticks_msec() - _carry_charge_started
-	_carry_charge_started = -1
-	var charge := clampf(float(held_ms) / PUNCH_CHARGE_MS, 0.0, 1.0)
-	var direction := -head.global_basis.z
-	if _carry_mode == "item" and _carried_item != null:
-		_carried_item.request_release.rpc_id(1, true)
-		_carried_item = null
-		_carry_mode = "none"
-		_charge_started = -1
-	elif _carry_mode == "player" and _carried_player_id != 0:
-		var speed := lerpf(6.0, 16.0, charge)
-		_launch_carried_player.rpc_id(_carried_player_id, direction, speed, _carried_player_id)
-		_carried_player_id = 0
-		_carry_mode = "none"
-		_charge_started = -1
+	var c: Node = carrier.carried as Node
+	var direction := -get_node("Head").global_basis.z
+	if c is PhysicsProp:
+		# item: server-mediated throw via request_release (server applies
+		# direction from holder's head + speed from its own charge timing).
+		c.request_release.rpc_id(1, true)
+	else:
+		# downed player: launch RPC targeting the carried player.
+		var carried_id := str(c.name).to_int()
+		if carried_id != 0:
+			var speed := lerpf(6.0, 16.0, charge)
+			_launch_carried_player.rpc_id(carried_id, direction, speed, carried_id)
+	carrier.drop(true)
 
 func _handle_punch_input(event: InputEvent) -> void:
 	# Q starts / releases a punch charge only when empty-handed (no item, no carried player).
-	if _carry_mode != "none":
+	if carrier.is_carrying():
 		return
 	if event.is_action_pressed("punch_charge"):
 		_start_punch_charge()
@@ -212,7 +195,7 @@ func _handle_punch_input(event: InputEvent) -> void:
 		_release_punch_charge()
 
 func _start_punch_charge() -> void:
-	if _punch_charge_held or _knocked_down_until > Time.get_ticks_msec() / 1000.0 or _pickup_attempting or _just_picked_up or _carry_mode != "none":
+	if _punch_charge_held or _knocked_down_until > Time.get_ticks_msec() / 1000.0 or _pickup_attempting or _just_picked_up or carrier.is_carrying():
 		return
 	_punch_charge_held = true
 	_punch_charge_started = Time.get_ticks_msec()
@@ -325,8 +308,11 @@ func _process(delta: float) -> void:
 	var held := Prop.held_by(get_tree(), str(name).to_int())
 	# Don't hide the charge bar when carrying a player — players aren't PhysicsProps,
 	# so held_by() returns null even while we're holding one.
-	if held == null and _carry_mode != "player":
+	if held == null and not carrier.is_carrying_player():
 		_charge_started = -1
+	# Sync throw-charge meter from Carrier so the UI matches what we're charging.
+	if carrier.is_carrying() and carrier.charge_started >= 0.0:
+		_charge_started = carrier.charge_started
 	var charge := clampf((Time.get_ticks_msec() - _charge_started) / 1250.0, 0.0, 1.0) if _charge_started >= 0 else -1.0
 	# Knockdown expired naturally: restore movement and release carrier link
 	# But NOT while being carried — carried players stay down until thrown.
@@ -349,7 +335,7 @@ func _exit_tree() -> void:
 	_highlight.clear()
 
 func _try_interact() -> void:
-	if _carry_mode != "none":
+	if carrier.is_carrying():
 		return   # can't interact while carrying something
 	if not ray.is_colliding():
 		return
@@ -405,27 +391,24 @@ func _apply_knockdown(seconds: float) -> void:
 	input_locked = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	# drop anything being carried
-	if _carry_mode == "item" and _carried_item != null:
-		_carried_item.request_release.rpc_id(1, false)
-		_carried_item = null
-		_carry_mode = "none"
-		_charge_started = -1
-	elif _carry_mode == "player":
-		_carried_player_id = 0
-		_carry_mode = "none"
-		_charge_started = -1
+	if carrier.is_carrying():
+		var c: Node = carrier.carried as Node
+		if c is PhysicsProp and c.holder_id != 0:
+			c.request_release.rpc_id(1, false)
+		carrier.drop(false)
+	_carried_player_id = 0
 	# visual slump: look down so the player reads as "downed"
 	head.rotation.x = deg_to_rad(60)
 
 # Called by physics_prop when this player picks up or drops an item.
+# Delegates to Carrier (single carry path); kept for backward-compat
+# callers during the transition to Carrier-based ownership.
 func _set_carry_item(item: PhysicsProp) -> void:
-	_carried_item = item
-	_carry_mode = "item"
+	carrier.carried = item   # item replication handled by prop itself
 	# carrier keeps input (can move while carrying)
 
 func _clear_carry_item() -> void:
-	_carried_item = null
-	_carry_mode = "none"
+	carrier.drop(false)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 # ---------- carry / throw knocked-down players (phase 2) ----------
@@ -444,8 +427,8 @@ func interact(player: Node) -> void:
 		return  # not downed, can't be picked up
 	if _carrier_id != 0:
 		return  # already being carried
-	var carrier := _player_node(carrier_id)
-	if carrier == null or carrier._carried_player_id != 0:
+	var carrier_node := _player_node(carrier_id)
+	if carrier_node == null or carrier_node.carrier.is_carrying():
 		return  # carrier already holding someone
 	_pickup_request.rpc(carrier_id, carried_id)
 
@@ -454,10 +437,9 @@ func _pickup_request(carrier_id: int, carried_id: int) -> void:
 	# Runs on all machines. Each machine sets state for the player it owns.
 	var my_id := multiplayer.get_unique_id()
 	if my_id == carrier_id:
-		var carrier := _player_node(carrier_id)
-		if carrier != null:
-			carrier._carried_player_id = carried_id
-			carrier._carry_mode = "player"
+		var carrier_node := _player_node(carrier_id)
+		if carrier_node != null:
+			carrier_node._carried_player_id = carried_id
 			# carrier keeps input (can move while carrying)
 	elif my_id == carried_id:
 		_carrier_id = carrier_id
