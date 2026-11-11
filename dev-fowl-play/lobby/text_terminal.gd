@@ -25,6 +25,9 @@ func set_text(t: String) -> void:
 	text = t
 	_refresh()
 
+func get_interaction_prompt(_player: Node) -> String:
+	return "Edit " + title
+
 func interact(player: Node) -> void:
 	if _typing:
 		return

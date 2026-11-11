@@ -31,6 +31,9 @@ func _ready() -> void:
 	label.outline_size = 4
 	label.position = Vector3(0, size.y * 0.5 + 0.005, 0)
 
+func get_interaction_prompt(_player: Node) -> String:
+	return label_text if label_text != "" else "Press"
+
 func interact(_player: Node) -> void:
 	pressed.emit(value)
 	if _tween:

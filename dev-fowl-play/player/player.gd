@@ -415,6 +415,9 @@ func _clear_carry_item() -> void:
 	carrier.drop(false)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
+func get_interaction_prompt(_player: Node) -> String:
+	return "Pick up" if _knocked_down_until > Time.get_ticks_msec() / 1000.0 else "Interact"
+
 # ---------- carry / throw knocked-down players (phase 2) ----------
 
 # Called by another player pressing Q while looking at this downed player.
