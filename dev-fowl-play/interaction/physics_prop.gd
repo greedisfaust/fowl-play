@@ -48,6 +48,31 @@ static func held_by(tree: SceneTree, who: int) -> PhysicsProp:
 static func throw_speed(seconds: float) -> float:
 	return lerpf(MIN_THROW_SPEED, MAX_THROW_SPEED, clampf(seconds / CHARGE_SECONDS, 0.0, 1.0))
 
+# --- Carryable interface ---
+
+func pickup(holder: Node) -> void:
+	# Carrier calls this; replicate holder change authoritatively (server only).
+	# Mirrors request_use() but skips the reach/push checks — Carrier already validated.
+	if not multiplayer.is_server() or holder_id != 0:
+		return
+	var who := str(holder.name).to_int()
+	if who == 0:
+		who = 1
+	_sync_holder.rpc(who, global_position, global_basis.get_rotation_quaternion())
+
+func release(throw: bool, direction: Vector3, speed: float) -> void:
+	_do_release(throw, direction, speed)
+
+func is_carried() -> bool:
+	return holder_id != 0
+
+func get_carry_offset() -> Vector3:
+	# Single-hand offset in front of the head (matches _physics_process follow target).
+	return Vector3(0.38, -0.28, -0.85)
+
+func get_throw_speed(charge: float) -> float:
+	return throw_speed(charge)
+
 func _player(who: int) -> Node3D:
 	return get_tree().get_first_node_in_group("game_world").get_node_or_null("Players/" + str(who)) if get_tree().has_group("game_world") else null
 
@@ -115,9 +140,14 @@ func request_release(throwing: bool) -> void:
 	_release(throwing)
 
 func _release(throwing: bool) -> void:
+	_do_release(throwing)
+
+func _do_release(throwing: bool, direction: Vector3 = Vector3.FORWARD, speed: float = 0.0) -> void:
 	var player := _player(holder_id)
-	var direction: Vector3 = Vector3.FORWARD if player == null else -player.head.global_basis.z
-	var speed := throw_speed((Time.get_ticks_msec() - _charge_started) / 1000.0) if throwing else 0.0
+	if player != null and direction == Vector3.FORWARD:
+		direction = -player.head.global_basis.z
+	if speed == 0.0 and throwing:
+		speed = throw_speed((Time.get_ticks_msec() - _charge_started) / 1000.0)
 	_charge_started = -1
 	_sync_holder.rpc(0, global_position, global_basis.get_rotation_quaternion())
 	linear_velocity = direction * speed
@@ -137,6 +167,7 @@ func _send_initial(who: int) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func _sync_holder(who: int, pos: Vector3, rot: Quaternion) -> void:
+	var old_holder := holder_id
 	holder_id = who
 	freeze = who != 0 or not multiplayer.is_server()
 	collision_layer = 1 if who == 0 else 0
@@ -147,6 +178,8 @@ func _sync_holder(who: int, pos: Vector3, rot: Quaternion) -> void:
 	_net_rotation = rot
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
+	# NOTE: the Carrier component owns hold-side tracking now.
+	# PhysicsProp no longer calls player._set_carry_item/_clear_carry_item here.
 
 @rpc("authority", "call_remote", "unreliable_ordered")
 func _sync_motion(pos: Vector3, rot: Quaternion) -> void:
