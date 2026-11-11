@@ -145,8 +145,12 @@ func _handle_carry_input(event: InputEvent) -> void:
 		return
 	# --- charging / throwing (hold Q or RMB, release) ---
 	if carrier.is_carrying():
+		var c: Node = carrier.carried as Node
 		if event.is_action_pressed("throw_item") or event.is_action_pressed("punch_charge"):
 			carrier.start_charge()
+			_charge_started = carrier.charge_started   # sync to player for UI + tests
+			if c is PhysicsProp:
+				c.request_charge.rpc_id(1)   # set prop's _charge_started so request_release(true) isn't rejected
 		if event.is_action_released("throw_item") or event.is_action_released("punch_charge"):
 			var charge: float = carrier.release_charge()
 			if charge >= 0.0:
