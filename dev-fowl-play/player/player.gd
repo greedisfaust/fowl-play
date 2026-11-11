@@ -9,42 +9,54 @@ const Interactable := preload("res://interaction/interactable.gd")
 const Overlay := preload("res://ui/interaction_overlay.gd")
 const Prop := preload("res://interaction/physics_prop.gd")
 const Carrier := preload("res://player/carrier.gd")
+const PlayerState := preload("res://player/player_state.gd")
+const Focus := preload("res://player/focus.gd")
+const Combat := preload("res://player/combat.gd")
 
+# Movement constants.
+const SPEED := 5.0
+const JUMP_VELOCITY := 6.5
+const GRAVITY := 20.0
+const MOUSE_SENS := 0.003
+
+# Punch / parry / carry constants now owned by components but re-exported here
+# for tests and any callers that still reference them directly.
 const PUNCH_CHARGE_MS := 500      # hold Q this long for a charged punch
 const PARRY_COOLDOWN := 1.5       # seconds before F can parry again
 const PARRY_GRACE := 1.5          # max seconds parry stays active while holding F
-const PUNCH_RANGE := 3.0          # how far a charged punch reaches
+const PUNCH_RANGE := 3.0          # how far a charged punch reaches (bug #9)
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
 @onready var ray: RayCast3D = $Head/Camera3D/RayCast3D
 
+# --- network / interpolation state ---
 var _net_pos := Vector3.ZERO
 var _net_yaw := 0.0
 var _net_pitch := 0.0
 var input_locked := false
 var hands: Hands
 var overlay: InteractionOverlay
-var _focus: Node
-var _highlight := Highlight.new()
-var _charge_started := -1
 var _last_push := 0
 var _hover_sent := false
 var _hover_clock := 0.0
-var _punch_charge_started := -1     # Q held for charged punch (empty-handed)
-var _punch_charge_held := false     # true while Q is currently held down
-var _parry_cooldown := 0.0          # seconds remaining before F can parry again
-var _parry_active_until := 0.0      # time until parry window expires
-var _knocked_down_until := 0.0      # time until player gets back up
-var _last_press := -10.0            # jab spam guard (seconds)
 var _wall_hit_until := 0.0          # time until wall-hit stun expires
 var _launch_until := 0.0            # time until thrown-player flight ends (preserves velocity)
 var _cam_shake_until := 0.0         # time until camera shake expires
 var _cam_shake_intensity := 1.0
-# ---------- unified carry ----------
-var carrier: Carrier = Carrier.new()   # single code path for item + downed-player carry (Phase 3+)
+
+# --- components (Phase 4) ---
+var state: PlayerState = PlayerState.new()   # explicit player state machine
+var focus: Focus = Focus.new()               # local "what am I looking at"
+var combat: Combat = Combat.new()            # punch / parry / knockdown
+var carrier: Carrier = Carrier.new()         # single code path for item + downed-player carry
+var _highlight: FocusHighlight = FocusHighlight.new()   # glow/outline on hovered target
+var base_cam_rot: Vector3 = Vector3.ZERO     # base camera rotation (shaking resets to this each frame)
+
+# --- legacy carry state kept for test compatibility (Phase 4 folds into Carrier) ---
+var _charge_started := -1              # milliseconds when throw/punch charge began (-1 = none)
 var _carrier_id := 0                   # peer id of who is carrying me (set when I'm downed)
-var _carried_player_id := 0            # peer id of downed player I'm carrying (Phase 4 folds into Carrier)
+var _carried_player_id := 0            # peer id of downed player I'm carrying
 var _pickup_attempting := false        # true on the frame Q initiates a pickup (blocks punch charge)
 var _just_picked_up := false           # set when Q resulted in a pickup; blocks punch charge
 
@@ -83,6 +95,9 @@ func _ready() -> void:
 		overlay = Overlay.new()
 		add_child(overlay)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		base_cam_rot = camera.rotation   # camera shake resets to this each frame (bug #13)
+	# Wire up Phase 4 components.
+	combat.setup(self, head, ray, hands, overlay, state, carrier)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
@@ -102,7 +117,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed("ui_cancel"):
 		_cancel_charge()
-		_cancel_punch_charge()
+		combat.set_punch_charge_held(false, -1.0)
 		input_locked = false
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		return
@@ -114,10 +129,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		head.rotation.x = clampf(head.rotation.x, deg_to_rad(-85), deg_to_rad(85))
 		hands.add_sway(event.relative)
 	_handle_carry_input(event)
-	_handle_punch_input(event)
-	_handle_parry_input(event)
+	_combat_punch_input(event)
+	_combat_parry_input(event)
 	# Only interact when not carrying anything — fixes the button bug while holding an item/player
-	if Prop.held_by(get_tree(), str(name).to_int()) == null:
+	if Prop.held_by(get_tree(), str(name).to_int()) == null and not carrier.is_carrying():
 		if event.is_action_pressed("interact") or event.is_action_pressed("primary"):
 			_try_interact()
 
@@ -189,84 +204,157 @@ func _apply_carry_throw(charge: float) -> void:
 			_launch_carried_player.rpc_id(carried_id, direction, speed, carried_id)
 	carrier.drop(true)
 
-func _handle_punch_input(event: InputEvent) -> void:
+func _combat_punch_input(event: InputEvent) -> void:
 	# Q starts / releases a punch charge only when empty-handed (no item, no carried player).
 	if carrier.is_carrying():
 		return
 	if event.is_action_pressed("punch_charge"):
-		_start_punch_charge()
+		_combat_start_punch_charge()
 	if event.is_action_released("punch_charge"):
-		_release_punch_charge()
+		_combat_release_punch_charge()
 
-func _start_punch_charge() -> void:
-	if _punch_charge_held or _knocked_down_until > Time.get_ticks_msec() / 1000.0 or _pickup_attempting or _just_picked_up or carrier.is_carrying():
-		return
-	_punch_charge_held = true
-	_punch_charge_started = Time.get_ticks_msec()
-
-func _release_punch_charge() -> void:
-	if not _punch_charge_held:
-		return
-	_punch_charge_held = false
-	var held_ms := Time.get_ticks_msec() - _punch_charge_started
-	_punch_charge_started = -1
-	if held_ms < 150:
-		_do_light_jab()
-	else:
-		_throw_charged_punch(clampf(float(held_ms) / PUNCH_CHARGE_MS, 0.0, 1.0))
-
-func _cancel_punch_charge() -> void:
-	_punch_charge_held = false
-	_punch_charge_started = -1
-
-func _do_light_jab() -> void:
-	# Quick slap: short range, no knockdown, just a tiny stun/recoil. Runs on authority then tells peers.
+func _combat_start_punch_charge() -> void:
 	var now := Time.get_ticks_msec() / 1000.0
-	if now - _last_press < 0.35:
+	if not combat.can_start_punch_charge() or _pickup_attempting or _just_picked_up:
+		return
+	combat.set_punch_charge_held(true, now)
+
+func _combat_release_punch_charge() -> void:
+	if not combat.can_release_punch_charge():
+		return
+	var started := combat.punch_charge_started()
+	combat.set_punch_charge_held(false, -1.0)
+	var held_ms := (now_f() - started) * 1000.0
+	var charge := clampf(float(held_ms) / PUNCH_CHARGE_MS, 0.0, 1.0)
+	if held_ms < 150:
+		_combat_do_light_jab()
+	else:
+		_combat_throw_charged_punch(charge)
+
+func _combat_do_light_jab() -> void:
+	var now := now_f()
+	if not combat.can_do_light_jab(now):
 		return   # jab spam guard
-	_last_press = now
-	var target := _raycast_hit()
-	if target != null and target.has_method("take_punch"):
-		target.take_punch.rpc(str(name).to_int(), 0.0, false)   # light jab = 0 charge, not a knockdown
+	combat.set_last_press(now)
+	var target := combat.raycast_hit()
+	if target != null:
+		var target_peer := _peer_of_node(target)
+		if target_peer != 0:
+			# Host-authoritative: ask the host to validate and apply the punch.
+			punch_request.rpc_id(1, target_peer, 0.0)
+	# Everyone else sees our hand swing; we see it locally.
 	_net_jab.rpc()
+	if hands != null:
+		var p := ray.get_collision_point() if ray.is_colliding() else Vector3.ZERO
+		hands.reach(p)
 
-func _throw_charged_punch(charge: float) -> void:
-	var target := _raycast_hit()
-	if target != null and target.has_method("take_punch"):
-		target.take_punch.rpc(str(name).to_int(), charge, charge >= 1.0)
+func _combat_throw_charged_punch(charge: float) -> void:
+	var target := combat.raycast_hit()
+	if target != null:
+		var target_peer := _peer_of_node(target)
+		if target_peer != 0:
+			var is_charged := charge >= 1.0
+			punch_request.rpc_id(1, target_peer, charge)
 	_net_punch.rpc(charge)
+	if hands != null:
+		var p := ray.get_collision_point() if ray.is_colliding() else Vector3.ZERO
+		hands.reach(p)
 
-func _raycast_hit() -> Node:
-	if not ray.is_colliding():
-		return null
-	var target = ray.get_collider()
-	if target and not target.has_method("take_punch"):
-		target = null
-	return target
+func now_f() -> float:
+	return Time.get_ticks_msec() / 1000.0
 
-func _handle_parry_input(event: InputEvent) -> void:
-	if _knocked_down_until > Time.get_ticks_msec() / 1000.0:
+# Name of what we're holding (for the HUD inventory line).
+func held_name() -> String:
+	if carrier.is_carrying():
+		var c: Node = carrier.carried as Node
+		if c != null and c.has_method("get_interaction_prompt"):
+			return c.get_interaction_prompt(self)
+		return str(c)
+	return ""
+
+# Charge meter value 0..1 (-1 when not charging).
+func charge_meter() -> float:
+	if carrier.is_carrying() and carrier.charge_started >= 0.0:
+		return clampf(float(Time.get_ticks_msec() - carrier.charge_started) / Carrier.CHARGE_MS, 0.0, 1.0)
+	if _charge_started >= 0:
+		return clampf(float(Time.get_ticks_msec() - _charge_started) / Carrier.CHARGE_MS, 0.0, 1.0)
+	return -1.0
+
+# Find the peer id of a node by walking up to the Players/<id> ancestor.
+func _peer_of_node(node: Node) -> int:
+	var n: Node = node
+	while n != null:
+		if n.name.match(r"^\d+$"):
+			return n.name.to_int()
+		n = n.get_parent()
+	return 0
+
+# Host-authoritative punch request. Client asks the host to validate + apply a punch.
+@rpc("any_peer", "call_local", "reliable")
+func punch_request(target_id: int, charge: float) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if sender != 0 and sender != 1:
+		return   # only the host may process punch requests
+	var puncher := _player_node(sender)
+	var target := _player_node(target_id)
+	if puncher == null or target == null:
+		return
+	# Validate reach + state (bug #9: PUNCH_RANGE enforced here).
+	var result := combat.validate_punch(puncher, target, charge)
+	var valid := result[0]
+	var is_charged := result[1]
+	if not valid:
+		return
+	# Tell the target to take the punch (authority RPC: only host can trigger it).
+	take_punch.rpc_id(target_id, sender, charge, is_charged)
+
+@rpc("authority", "call_local", "reliable")
+func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
+	# Only the host may trigger punches (bug #8 fix: no client-side knock-down cheat).
+	var sender := multiplayer.get_remote_sender_id()
+	if sender != 0 and sender != 1:
+		return
+
+	# If the target is parrying, the attacker gets knocked down instead.
+	if combat.is_parrying(now_f()):
+		combat.expire_parry(now_f())
+		var attacker := _player_node(attacker_id)
+		if attacker != null:
+			attacker._apply_knockdown(2.5)   # attacker's own machine applies knockdown
+		show_notice("PARRIED!")
+		return
+
+	if is_charged:
+		combat.apply_knockdown(2.5)
+		_knocked_down_until = Time.get_ticks_msec() / 1000.0 + 2.5
+		input_locked = true
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		head.rotation.x = deg_to_rad(60)
+		# Shakedown: only during Day phase (casino), never in lobby/rest
+		if GameState.phase == GameState.Phase.DAY:
+			var pct := 5
+			var new_wallet := maxi(0, GameState.wallet - (GameState.wallet * pct / 100.0))
+			GameState._set_wallet.rpc(new_wallet)   # host-authoritative, replicates to all
+			show_notice("SHAKEDOWN - %d%%" % pct)
+		else:
+			show_notice("KNOCKED DOWN")
+	else:
+		# Light jab: brief flinch, no knockdown
+		_knocked_down_until = now_f() + 0.35
+		input_locked = true
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _combat_parry_input(event: InputEvent) -> void:
+	if combat.knocked_down_until() > now_f():
 		return   # can't parry while down
 	if event.is_action_pressed("parry"):
-		_start_parry()
-
-func _start_parry() -> void:
-	var now := Time.get_ticks_msec() / 1000.0
-	if _parry_cooldown > 0.0 or now < _parry_active_until:
-		return
-	_parry_active_until = now + PARRY_GRACE   # press F: parry up for 1.5s grace
-	show_notice("PARRY READY")
-
-# Grace window expires on its own; cooldown starts after.
-# Release of F does not cancel early — the full grace period runs.
-func _expire_parry() -> void:
-	var now := Time.get_ticks_msec() / 1000.0
-	if _parry_active_until > 0.0 and now >= _parry_active_until:
-		_parry_active_until = 0.0
-		_parry_cooldown = PARRY_COOLDOWN
-		show_notice("PARRY COOLDOWN")
+		var now := now_f()
+		if combat.can_start_parry(now):
+			combat.start_parry(now)
 
 func _cancel_charge() -> void:
+	if carrier.is_carrying():
+		carrier.drop(false)
 	if _charge_started >= 0:
 		var held := Prop.held_by(get_tree(), str(name).to_int())
 		if held != null:
@@ -285,19 +373,20 @@ func show_notice(message: String) -> void:
 func _process(delta: float) -> void:
 	if not is_multiplayer_authority() or overlay == null:
 		return
-	var active := not input_locked and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
-	var target: Node = ray.get_collider() if active and ray.is_colliding() else null
-	if target != null and not Interactable.can(target):
-		target = null
-	# Only hover/glow players who are stunned or being carried — never healthy players
-	if target != null and target.has_method("is_stunned") and not target.is_stunned():
-		target = null
+	combat.process(delta)   # expire parry grace -> cooldown
+	# Knockdown expired naturally: restore movement and release carrier link
+	# But NOT while being carried — carried players stay down until thrown.
+	var now := now_f()
+	if _knocked_down_until > 0.0 and _carrier_id == 0 and now >= _knocked_down_until:
+		_knocked_down_until = 0.0
+		input_locked = false
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	focus.update(ray, self, input_locked, Input.mouse_mode == Input.MOUSE_MODE_CAPTURED, carrier, held_name())
+	var target := focus.target
 	var on := target != null
-	if target != _focus:
-		_focus = target
-		_highlight.set_target(_focus)
 	var point := ray.get_collision_point() if on else Vector3.ZERO
 	hands.set_hover(on, point)
+	_highlight.set_target(target)
 	_hover_clock -= delta
 	if on != _hover_sent:
 		_hover_sent = on
@@ -306,34 +395,17 @@ func _process(delta: float) -> void:
 	elif on and _hover_clock <= 0.0:
 		_hover_clock = 0.07
 		_net_hover_point.rpc(point)          # unreliable: just keeps the finger tracking
-	var prompt := ""
-	if is_instance_valid(_focus):
-		prompt = _focus.get_interaction_prompt(self)
-	var held := Prop.held_by(get_tree(), str(name).to_int())
-	# Don't hide the charge bar when carrying a player — players aren't PhysicsProps,
-	# so held_by() returns null even while we're holding one.
-	if held == null and not carrier.is_carrying_player():
-		_charge_started = -1
-	# Sync throw-charge meter from Carrier so the UI matches what we're charging.
-	if carrier.is_carrying() and carrier.charge_started >= 0.0:
-		_charge_started = carrier.charge_started
-	var charge := clampf((Time.get_ticks_msec() - _charge_started) / 1250.0, 0.0, 1.0) if _charge_started >= 0 else -1.0
-	# Knockdown expired naturally: restore movement and release carrier link
-	# But NOT while being carried — carried players stay down until thrown.
-	if _knocked_down_until > 0.0 and _carrier_id == 0 and Time.get_ticks_msec() / 1000.0 >= _knocked_down_until:
-		_knocked_down_until = 0.0
-		input_locked = false
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	_expire_parry()   # parry grace window expires on its own -> cooldown starts
-	overlay.update_focus(prompt, held.item_name if held != null else "", charge, active)
-	# camera shake decay
+	overlay.update_focus(focus.prompt, held_name(), charge_meter(), focus.active)
+	# camera shake decay — reset to base rotation each frame so it never drifts (bug #13)
 	var t := Time.get_ticks_msec() / 1000.0
 	if t < _cam_shake_until:
 		var s := _cam_shake_intensity * 0.03
-		camera.rotation.x += randf_range(-s, s)
-		camera.rotation.y += randf_range(-s, s)
+		camera.rotation.x = base_cam_rot.x + randf_range(-s, s)
+		camera.rotation.y = base_cam_rot.y + randf_range(-s, s)
 	else:
 		_cam_shake_until = 0.0
+		camera.rotation.x = base_cam_rot.x
+		camera.rotation.y = base_cam_rot.y
 
 func _exit_tree() -> void:
 	_highlight.clear()
@@ -350,33 +422,9 @@ func _try_interact() -> void:
 		_net_reach.rpc(p)   # tell everyone else where to swing this player's hand
 		target.interact(self)
 
-# ---------- punch / parry (phase 1) ----------
-
-@rpc("any_peer", "call_local", "reliable")
-func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
-	# If the target is parrying, the attacker gets knocked down instead.
-	if _parry_active_until > Time.get_ticks_msec() / 1000.0:
-		_parry_active_until = 0.0
-		_parry_cooldown = PARRY_COOLDOWN
-		var attacker := _player_node(attacker_id)
-		if attacker != null:
-			attacker._apply_knockdown(2.5)
-		show_notice("PARRIED!")
-		return
-
-	if is_charged:
-		_apply_knockdown(2.5)
-		# Shakedown: only during Day phase (casino), never in lobby/rest
-		if GameState.phase == GameState.Phase.DAY:
-			var pct := 5
-			var new_wallet := maxi(0, GameState.wallet - (GameState.wallet * pct / 100.0))
-			GameState._set_wallet.rpc(new_wallet)   # host-authoritative, replicates to all
-			show_notice("SHAKEDOWN - %d%%" % pct)
-		else:
-			show_notice("KNOCKED DOWN")
-	else:
-		# Light jab: brief flinch, no knockdown
-		_knocked_down_until = Time.get_ticks_msec() / 1000.0 + 0.35
+func _player_node(id: int) -> Node3D:
+	var world := get_tree().get_first_node_in_group("game_world")
+	return world.get_node_or_null("Players/" + str(id)) if world != null else null
 
 @rpc("authority", "call_remote", "unreliable")
 func _net_jab() -> void:
@@ -385,10 +433,6 @@ func _net_jab() -> void:
 @rpc("authority", "call_remote", "unreliable")
 func _net_punch(_charge: float) -> void:
 	hands.reach(ray.get_collision_point())
-
-func _player_node(id: int) -> Node3D:
-	var world := get_tree().get_first_node_in_group("game_world")
-	return world.get_node_or_null("Players/" + str(id)) if world != null else null
 
 func _apply_knockdown(seconds: float) -> void:
 	_knocked_down_until = Time.get_ticks_msec() / 1000.0 + seconds
@@ -495,6 +539,7 @@ func teleport_to(pos: Vector3, yaw: float) -> void:
 	if sender != 0 and sender != 1:
 		return   # only the host may move players
 	position = pos
+	carrier.drop(false)   # bug #11: teleporting must not let you keep carried items/players
 	_cancel_charge()
 	if overlay != null:
 		overlay.close_lore()
