@@ -27,33 +27,34 @@ enum State {
 	RAGDOLL,
 }
 
-var state: State = IDLE
+var state: State = State.IDLE
 
 # Last time we entered the current state (seconds). Used by input handlers
 # for cooldown/spam/timing math.
-var state_entered_at: float := 0.0
+var state_entered_at: float = 0.0
 
 signal state_changed(old: State, new: State)
 
 # True iff `new_state` is a legal transition from the current state.
 func is_transition_legal(new_state: State) -> bool:
 	match state:
-		IDLE:
-			return new_state in [CHARGING_PUNCH, PARRYING, CARRYING, KNOCKED_DOWN, CARRIED]
-		CHARGING_PUNCH:
-			return new_state in [IDLE, KNOCKED_DOWN]
-		PARRYING:
-			return new_state in [IDLE, KNOCKED_DOWN]
-		KNOCKED_DOWN:
-			return new_state in [IDLE, CARRIED]
-		CARRYING:
-			return new_state in [IDLE, KNOCKED_DOWN]
-		CARRIED:
-			return new_state in [IDLE, RAGDOLL]
-		THROWN:
-			return new_state in [IDLE]
-		RAGDOLL:
-			return new_state in [IDLE]
+		State.IDLE:
+			return new_state in [State.CHARGING_PUNCH, State.PARRYING, State.CARRYING, State.KNOCKED_DOWN, State.CARRIED]
+		State.CHARGING_PUNCH:
+			return new_state in [State.IDLE, State.KNOCKED_DOWN]
+		State.PARRYING:
+			return new_state in [State.IDLE, State.KNOCKED_DOWN]
+		State.KNOCKED_DOWN:
+			return new_state in [State.IDLE, State.CARRIED]
+		State.CARRYING:
+			return new_state in [State.IDLE, State.KNOCKED_DOWN]
+		State.CARRIED:
+			return new_state in [State.IDLE, State.RAGDOLL]
+		State.THROWN:
+			return new_state in [State.IDLE]
+		State.RAGDOLL:
+			return new_state in [State.IDLE]
+	return false
 
 # Attempt a state transition. Returns false if the transition is illegal.
 func transition_to(new_state: State) -> bool:
@@ -71,31 +72,31 @@ func transition_to(new_state: State) -> bool:
 # --- can_* queries -------------------------------------------------------
 
 func can_punch() -> bool:
-	return state in [IDLE]
+	return state == State.IDLE
 
 func can_parry() -> bool:
-	return state in [IDLE]
+	return state == State.IDLE
 
 func can_pickup() -> bool:
-	return state in [IDLE]
+	return state == State.IDLE
 
 func can_interact() -> bool:
-	return state in [IDLE]
+	return state == State.IDLE
 
 func is_idle() -> bool:
-	return state == IDLE
+	return state == State.IDLE
 
 func is_knocked_down() -> bool:
-	return state == KNOCKED_DOWN
+	return state == State.KNOCKED_DOWN
 
 func is_carried() -> bool:
-	return state == CARRIED
+	return state == State.CARRIED
 
 func is_ragdoll() -> bool:
-	return state == RAGDOLL
+	return state == State.RAGDOLL
 
 func is_carrying() -> bool:
-	return state == CARRYING
+	return state == State.CARRYING
 
 func is_thrown() -> bool:
-	return state == THROWN
+	return state == State.THROWN

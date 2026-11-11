@@ -45,7 +45,7 @@ func setup(o: Node3D, h: Node3D, r: RayCast3D, hands_in: Object, ov: Object, ps:
 
 # Call from player.gd's _process each frame.
 func process(delta: float) -> void:
-	_expire_parry()
+	expire_parry(Time.get_ticks_msec() / 1000.0)
 
 # --- punch charge state accessors (used by player.gd input handlers) ---
 
@@ -118,7 +118,7 @@ func set_knocked_down_until(val: float) -> void:
 # Apply knockdown to self: state transition, drop carried, lock input.
 # player.gd calls this from its take_punch RPC.
 func apply_knockdown(seconds: float) -> void:
-	player_state.transition_to(PlayerState.KNOCKED_DOWN)
+	player_state.transition_to(PlayerState.State.KNOCKED_DOWN)
 	_knocked_down_until = Time.get_ticks_msec() / 1000.0 + seconds
 	owner.input_locked = true
 	# visual slump: look down so the player reads as "downed"

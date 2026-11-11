@@ -13,12 +13,6 @@ const PlayerState := preload("res://player/player_state.gd")
 const Focus := preload("res://player/focus.gd")
 const Combat := preload("res://player/combat.gd")
 
-# Movement constants.
-const SPEED := 5.0
-const JUMP_VELOCITY := 6.5
-const GRAVITY := 20.0
-const MOUSE_SENS := 0.003
-
 # Punch / parry / carry constants now owned by components but re-exported here
 # for tests and any callers that still reference them directly.
 const PUNCH_CHARGE_MS := 500      # hold Q this long for a charged punch
@@ -55,6 +49,7 @@ var base_cam_rot: Vector3 = Vector3.ZERO     # base camera rotation (shaking res
 
 # --- legacy carry state kept for test compatibility (Phase 4 folds into Carrier) ---
 var _charge_started := -1              # milliseconds when throw/punch charge began (-1 = none)
+var _knocked_down_until := 0.0         # time until player gets back up from knockdown
 var _carrier_id := 0                   # peer id of who is carrying me (set when I'm downed)
 var _carried_player_id := 0            # peer id of downed player I'm carrying
 var _pickup_attempting := false        # true on the frame Q initiates a pickup (blocks punch charge)
@@ -301,8 +296,8 @@ func punch_request(target_id: int, charge: float) -> void:
 		return
 	# Validate reach + state (bug #9: PUNCH_RANGE enforced here).
 	var result := combat.validate_punch(puncher, target, charge)
-	var valid := result[0]
-	var is_charged := result[1]
+	var valid := bool(result[0])
+	var is_charged := bool(result[1])
 	if not valid:
 		return
 	# Tell the target to take the punch (authority RPC: only host can trigger it).
