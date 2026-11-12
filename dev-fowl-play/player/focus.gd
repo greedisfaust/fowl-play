@@ -25,11 +25,16 @@ func update(
 	overlay_held_name: String = "",
 ) -> void:
 	var now_active := not input_locked and mouse_captured
-	var t: Node = ray.get_collider() if now_active and ray.is_colliding() else null
-	if t != null and not Interactable.can(t):
-		t = null
-	# Only hover/glow players who are stunned or being carried — never healthy players
-	if t != null and t.has_method("is_stunned") and not t.is_stunned():
+	var t: Variant = ray.get_collider() if now_active and ray.is_colliding() else null
+	# Raycasts hit body parts ($Body, $Head) — walk up to the player root or
+	# interactable node that actually implements the Interactable contract.
+	if t != null:
+		var target: Node = t
+		while target != null and not Interactable.can(target):
+			target = target.get_parent()
+		t = target
+	# Only hover/glow players who are stunned or being carried — never healthy players.
+	if t != null and t.name.match(r"^\d+$") and not t.is_stunned():
 		t = null
 	var on := t != null
 	if t != target:

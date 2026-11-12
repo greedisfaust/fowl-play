@@ -1,0 +1,10 @@
+{
+    "env": {
+        "ANTHROPIC_BASE_URL": "http://localhost:20128",
+        "ANTHROPIC_AUTH_TOKEN": "sk-23168a82085d432c-98e4a0-22661aa1",
+        "ANTHROPIC_MODEL": "omniroute-combo3",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "omniroute-combo3",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "omniroute-combo3",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "omniroute-combo3"
+    }
+}

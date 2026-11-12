@@ -267,6 +267,13 @@ func set_speed(s: float) -> void:
 func set_color(c: Color) -> void:
 	_mat.albedo_color = c
 
+var _shake_until := 0.0
+var _shake_intensity := 1.0
+
+func shake(intensity: float) -> void:
+	_shake_intensity = clampf(intensity, 0.0, 2.0)
+	_shake_until = Time.get_ticks_msec() / 1000.0 + 0.25
+
 # world point -> the hand's own units. The viewmodel node is shrunk, so undo that here to keep all
 # reach/aim math identical to an unscaled hand.
 func _to_hand_units(world_point: Vector3) -> Vector3:
@@ -315,6 +322,11 @@ func _process(delta: float) -> void:
 		_apply_pose(POKE_HAND, _hover_t)
 		_hands[POKE_HAND].quaternion = _rest_q[POKE_HAND].slerp(_aim_cur, _hover_t)
 	_sway = _sway.lerp(Vector2.ZERO, minf(8.0 * delta, 1.0))
+	var shake_t := Time.get_ticks_msec() / 1000.0
+	if shake_t < _shake_until:
+		var s := _shake_intensity * 0.015
+		for i in 2:
+			_rigs[i].position += Vector3(randf_range(-s, s), randf_range(-s, s), 0.0)
 	_bob_t += delta * (5.0 + _speed)
 	var moving := clampf(_speed / 5.0, 0.0, 1.0)
 	var t := Time.get_ticks_msec() / 1000.0

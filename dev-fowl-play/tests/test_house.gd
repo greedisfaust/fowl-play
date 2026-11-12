@@ -128,5 +128,76 @@ func _ready() -> void:
 	event.pressed = true
 	player._unhandled_input(event)
 	check(not player.overlay.reading and not player.input_locked, "Escape closes lore without trapping input")
+	# ---------- Phase 6: carrier disconnect ----------
+	var prop_c := make_prop(Vector3(0.4, 0.8, 0.0))
+	await get_tree().physics_frame
+	prop_c.request_use()
+	check(prop_c.holder_id == 1, "prop picked up for disconnect test")
+	# Simulate the holder disconnecting: prop must release itself.
+	prop_c._peer_left(1)
+	check(prop_c.holder_id == 0, "disconnected holder releases prop (carrier disconnect)")
+	check(not prop_c.freeze, "prop physics re-enabled after disconnect")
+
+	# ---------- Phase 6: double-pickup ----------
+	var prop_d := make_prop(Vector3(-0.4, 0.8, 0.0))
+	var prop_e := make_prop(Vector3(1.4, 0.8, 0.0))
+	await get_tree().physics_frame
+	prop_d.request_use()
+	check(prop_d.holder_id == 1, "first prop picked up")
+	prop_e.request_use()
+	check(prop_e.holder_id == 0, "second pickup rejected while carrying (double-pickup)")
+	prop_d.request_release(false)
+	check(prop_d.holder_id == 0, "first prop released")
+
+	# ---------- Phase 6: drop-on-teleport ----------
+	var prop_f := make_prop(Vector3(0.0, 0.8, 2.0))
+	await get_tree().physics_frame
+	prop_f.request_use()
+	check(prop_f.holder_id == 1, "prop picked up for teleport test")
+	# Teleporting must drop what we carry (bug #11).
+	player.teleport_to(Vector3(50, 0, 50), 0.0)
+	check(prop_f.holder_id == 0, "teleport drops carried prop")
+	check(player.carrier.is_carrying() == false, "carrier cleared after teleport drop")
+	# Reset player position for remaining tests.
+	player.teleport_to(Vector3(0, 0, 0), 0.0)
+
+	# ---------- Phase 6: punch while picking up ----------
+	var prop_g := make_prop(Vector3(0.0, 0.8, -2.0))
+	await get_tree().physics_frame
+	prop_g.request_use()
+	check(prop_g.holder_id == 1, "prop picked up for punch test")
+	check(not player.combat.can_start_punch_charge(), "cannot start punch charge while carrying")
+	# Jab input should also be ignored while carrying.
+	var jab_event := InputEventKey.new()
+	jab_event.physical_keycode = KEY_Q
+	jab_event.pressed = true
+	carry_input.call(jab_event)
+	check(prop_g.holder_id == 1, "still carrying after jab attempt while carrying")
+	prop_g.request_release(false)
+
+	# ---------- Phase 6: state-machine transitions ----------
+	var st: PlayerState = player.state
+	check(st.is_transition_legal(PlayerState.State.IDLE), "idle->idle legal (no-op)")
+	check(st.is_transition_legal(PlayerState.State.CHARGING_PUNCH), "idle->charging punch legal")
+	check(st.is_transition_legal(PlayerState.State.PARRYING), "idle->parrying legal")
+	check(st.is_transition_legal(PlayerState.State.KNOCKED_DOWN), "idle->knocked down legal")
+	check(st.is_transition_legal(PlayerState.State.CARRYING), "idle->carrying legal")
+	check(not st.is_transition_legal(PlayerState.State.RAGDOLL), "idle->ragdoll NOT legal")
+	check(st.transition_to(PlayerState.State.CHARGING_PUNCH), "transition to charging punch OK")
+	check(st.state == PlayerState.State.CHARGING_PUNCH, "state is charging punch")
+	check(not st.transition_to(PlayerState.State.CARRYING), "charging->carrying NOT legal")
+	check(st.transition_to(PlayerState.State.IDLE), "charging->idle legal")
+	check(st.is_transition_legal(PlayerState.State.KNOCKED_DOWN), "idle->knocked down legal again")
+	check(st.transition_to(PlayerState.State.KNOCKED_DOWN), "transition to knocked down OK")
+	check(st.is_transition_legal(PlayerState.State.CARRIED), "knocked down->carried legal")
+	check(not st.is_transition_legal(PlayerState.State.IDLE), "knocked down->idle NOT legal")
+	check(st.transition_to(PlayerState.State.CARRIED), "transition to carried OK")
+	check(st.is_transition_legal(PlayerState.State.RAGDOLL), "carried->ragdoll legal")
+	check(not st.is_transition_legal(PlayerState.State.IDLE), "carried->idle NOT legal")
+	check(st.transition_to(PlayerState.State.IDLE), "ragdoll->idle legal")
+	check(st.state == PlayerState.State.IDLE, "back to idle")
+	check(st.is_ragdolled() == false, "not ragdolled after reset")
+	check(st.is_knocked_down() == false, "not knocked down after reset")
+
 	print("House and hand: %d checks, %d failures" % [checks, failures])
 	get_tree().quit(0 if failures == 0 else 1)
