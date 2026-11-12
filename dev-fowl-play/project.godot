@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 GameState="*uid://c8brc80v1tqsb"
 Style="*uid://c3cvhwdqkcx4n"
 Network="*uid://c2ricdq5268n0"
+CarryRegistry="res://autoload/carry_registry.gd"
 
 [display]
 
