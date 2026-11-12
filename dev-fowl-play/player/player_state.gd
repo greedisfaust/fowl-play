@@ -33,6 +33,9 @@ var state: State = State.IDLE
 # for cooldown/spam/timing math.
 var state_entered_at: float = 0.0
 
+# How long (seconds) the player stays ragdolled after being hit. 0 = not ragdolled.
+var ragdolled_until: float = 0.0
+
 signal state_changed(old: State, new: State)
 
 # True iff `new_state` is a legal transition from the current state.
@@ -100,3 +103,7 @@ func is_carrying() -> bool:
 
 func is_thrown() -> bool:
 	return state == State.THROWN
+
+# True while the player is ragdolled (hit, tumbling, can be carried).
+func is_ragdolled() -> bool:
+	return ragdolled_until > Time.get_ticks_msec() / 1000.0

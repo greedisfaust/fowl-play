@@ -39,6 +39,8 @@ func is_carrying_player() -> bool:
 	return carried != null and not (carried is PhysicsProp)
 
 # Record that we're now holding `target`. Returns false if already carrying.
+# Calls target.pickup(owner) if the target implements the Carryable contract,
+# so items and downed players share ONE carry code path.
 # Replication of the hold state is the caller's responsibility
 # (prop.interact / _pickup_request.rpc).
 func pickup(target: Variant) -> bool:
@@ -47,6 +49,8 @@ func pickup(target: Variant) -> bool:
 	carried = target
 	charge_started = -1
 	charge_held = false
+	if carried != null and carried.has_method("pickup"):
+		carried.pickup(owner)
 	return true
 
 # Begin charging a throw (drives the throw-meter UI).

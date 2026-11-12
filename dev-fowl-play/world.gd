@@ -109,8 +109,19 @@ func _on_peer_connected(id: int) -> void:
 
 func _on_peer_disconnected(id: int) -> void:
 	if multiplayer.is_server():
-		var p := $Players.get_node_or_null(str(id))
+		var p: CharacterBody3D = $Players.get_node_or_null(str(id)) as CharacterBody3D
 		if p:
+			# Bug #1: if the disconnecting peer was carrying a player, release
+			# the carried player so they aren't stuck forever.
+			var carrier: Carrier = p.carrier
+			if carrier != null and carrier.carried != null:
+				var carried: Variant = carrier.carried
+				if carried.has_node("Head"):
+					carried.release(false, Vector3.ZERO, 0.0)
+				carrier.drop(false)
+			# If the disconnecting peer was being carried, clear their carrier link.
+			if p.has_node("Head") and p.is_carried():
+				p._carrier_id = 0
 			p.queue_free()
 
 func _remove_solo() -> Vector3:

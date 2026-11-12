@@ -267,6 +267,22 @@ func set_speed(s: float) -> void:
 func set_color(c: Color) -> void:
 	_mat.albedo_color = c
 
+# Box both hands in front of the face (parry guard) or relax back to normal.
+func set_guard(active: bool) -> void:
+	if _rigs.is_empty():
+		return
+	for i in 2:
+		var hand := _hands[i]
+		var rig := _rigs[i]
+		if active:
+			# Pull both hands up in front of the face, palms forward.
+			var side := -1.0 if i == 0 else 1.0
+			rig.position = Vector3(side * 0.12, 0.08, -0.30)
+			hand.quaternion = Quaternion(Vector3.RIGHT, deg_to_rad(-20)) * Quaternion(Vector3.UP, deg_to_rad(side * 15))
+		else:
+			rig.position = _rest[i]
+			hand.quaternion = _rest_q[i]
+
 var _shake_until := 0.0
 var _shake_intensity := 1.0
 
