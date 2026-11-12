@@ -308,11 +308,18 @@ func _casino() -> void:
 	cards.position = Vector3(5, 0.5, 4)
 	cross.rotation.y = PI
 	cards.rotation.y = PI
+	var poker: Node3D = room.get_node("Poker")
+	poker.position = Vector3(-7.5, 0.5, -6)
+	poker.rotation.y = PI
 	for table in [cross, cards]:
 		table.get_node("Counter").material_override = _material(Color("43212b"))
 		for side in [-1.0, 1.0]:
 			_box(table, Vector3(0.025, 0.035, 1.6), Vector3(side * 1.49, 0.93, 0), BRASS, false)
 			_box(table, Vector3(3, 0.035, 0.025), Vector3(0, 0.93, side * 0.79), BRASS, false)
+	poker.get_node("Counter").material_override = _material(Color("43212b"))
+	for side in [-1.0, 1.0]:
+		_box(poker, Vector3(0.025, 0.035, 1.6), Vector3(side * 2.49, 0.93, 0), BRASS, false)
+		_box(poker, Vector3(5, 0.035, 0.025), Vector3(0, 0.93, side * 0.79), BRASS, false)
 	_box(room, Vector3(4.4, 0.035, 27), Vector3(0, 0.52, -0.5), Color("622b38"), false)
 	for side in [-1.0, 1.0]:
 		_box(room, Vector3(0.04, 0.04, 27), Vector3(side * 2.2, 0.53, -0.5), BRASS, false)
