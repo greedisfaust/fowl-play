@@ -142,7 +142,9 @@ func _physics_process(delta: float) -> void:
 		var hit: Dictionary = get_viewport().get_world_3d().direct_space_state.intersect_ray(query)
 		if not hit.is_empty():
 			target = hit.position + hit.normal * 0.25
-		global_position = global_position.lerp(target, minf(delta * PhysicsTuning.LIMP_SWING_LAG, 1.0))
+		# Lock the carried body to the anchor position (no spring lag) so it
+		# feels glued to the hand/camera. Wall raycast still prevents clipping.
+		global_position = target
 		if limp_mode:
 			global_basis = carry_anchor.global_basis
 		# Host: send carried-body snapshots every frame so clients see smooth carried motion.

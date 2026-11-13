@@ -88,8 +88,9 @@ func is_carried() -> bool:
 	return CarryRegistry.held_by.has(self)
 
 func get_carry_offset() -> Vector3:
-	# Held in the right hand: right (x), chest height (y), in front (z).
-	return Vector3(0.45, 0.55, -0.85)
+	# Held in the right hand, head-relative:
+	#   x = right, y = down from eye level to chest, z = in front of face
+	return Vector3(0.45, -0.40, -0.70)
 
 func get_throw_speed(charge: float) -> float:
 	return lerpf(PhysicsTuning.MIN_THROW_SPEED_MPS, PhysicsTuning.MAX_THROW_SPEED_MPS, clampf(charge, 0.0, 1.0))
