@@ -115,8 +115,9 @@ func is_parrying(now: float) -> bool:
 
 # Limp the target: input locked, host-simulated physical body, can be carried.
 # `direction` and `speed` launch them; `seconds` is how long they stay down.
-# The owner's BodyPhys enters limp mode; authority is suspended while limp so
-# the client cannot fabricate a launch (R3 authority model).
+# The owner's BodyPhys limp mode + launch is applied by player.gd's punch_request
+# on the host (host authority over bodies). This function handles state machine
+# + visuals only: apply_launch is a no-op on clients since they lack authority.
 func apply_ragdoll(direction: Vector3, speed: float, seconds: float) -> void:
 	player_state.transition_to(PlayerState.State.LIMP)
 	player_state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
@@ -124,14 +125,33 @@ func apply_ragdoll(direction: Vector3, speed: float, seconds: float) -> void:
 	# Drop anything being carried before going limp (tell the host to release).
 	if carrier.is_carrying():
 		carrier.request_drop(false)
-	# Launch the body (host-authoritative via BodyPhys).
-	var bp := _body_phys_of(owner)
-	if bp is BodyPhys:
-		bp.set_limp_mode(seconds)
-		bp.apply_launch(direction, speed)
 	# visual slump: look down so the player reads as "downed"
 	if owner.has_node("Head"):
 		(owner.get_node("Head") as Node3D).rotation.x = deg_to_rad(60)
+
+# --- charged-punch lunge (velocity preserved through _physics_process) ---
+
+var _lunge_until := 0.0          # timestamp when lunge expires
+var _lunge_velocity := Vector3.ZERO   # launch velocity for the lunge
+
+## Start a charged-punch lunge: velocity is preserved by player.gd's
+## _physics_process until _lunge_until, so input can't overwrite it.
+func start_lunge(direction: Vector3, speed: float, duration: float) -> void:
+	_lunge_velocity = direction * speed
+	_lunge_until = Time.get_ticks_msec() / 1000.0 + duration
+
+func is_lunging(now: float) -> bool:
+	return now < _lunge_until
+
+func lunge_velocity() -> Vector3:
+	return _lunge_velocity
+
+# Launch the owner with a lunge velocity (charged punch). Deprecated: use
+# start_lunge() instead so velocity survives _physics_process input overwrite.
+func lunge(speed: float) -> void:
+	if owner.has_node("Head"):
+		var dir := -(owner.get_node("Head") as Node3D).global_basis.z
+		start_lunge(dir, speed, 0.5)
 
 # --- helpers ----------------------------------------------------------------
 
@@ -151,11 +171,6 @@ func _body_phys_of(node: Node3D) -> BodyPhys:
 			return child as BodyPhys
 	return null
 
-
-# Launch the owner with a lunge velocity (charged punch).
-func lunge(speed: float) -> void:
-	if owner.has_node("Head"):
-		velocity_apply(-(owner.get_node("Head") as Node3D).global_basis.z, speed)
 
 # --- host-authoritative punch validation -------------------------------
 

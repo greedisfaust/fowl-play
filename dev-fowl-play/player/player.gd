@@ -273,8 +273,8 @@ func charge_meter() -> float:
 @rpc("any_peer", "call_local", "reliable")
 func punch_request(target_id: int, charge: float) -> void:
 	var sender := multiplayer.get_remote_sender_id()
-	if sender != 0 and sender != 1:
-		return   # only the host may process punch requests
+	if sender == -1:
+		return   # invalid sender (not a real peer)
 	var puncher := _player_node(sender)
 	var target := _player_node(target_id)
 	if puncher == null or target == null:
@@ -297,7 +297,7 @@ func punch_request(target_id: int, charge: float) -> void:
 			target_bp.set_limp_mode(0.35)
 	take_punch.rpc_id(target_id, sender, charge, is_charged)
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if sender != 0 and sender != 1:
@@ -314,14 +314,15 @@ func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
 		var direction: Vector3 = (attacker.global_position - global_position).normalized()
 		if direction == Vector3.ZERO:
 			direction = -get_node("Head").global_basis.z
-		combat.apply_ragdoll(direction, 10.0, 2.5)   # attacker ragdolled
+		# Parry success: attacker is knocked down instead (host applies physics via riposte).
+		parry_riposte.rpc_id(1, attacker_id)
 		show_notice("PARRIED!")
 		return
 
 	if is_charged:
-		var attacker := _player_node(int(attacker_id))
-		var from: Vector3 = attacker.global_position if attacker != null else global_position - get_node("Head").global_basis.z
-		combat.apply_ragdoll((global_position - from).normalized(), 14.0, 2.5)
+		state.transition_to(PlayerState.State.LIMP)
+		state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
+		state.start_limp_timer(PhysicsTuning.LIMP_SECONDS)
 		if GameState.phase == GameState.Phase.DAY:
 			var pct := 5
 			var new_wallet := maxi(0, GameState.wallet - (GameState.wallet * pct / 100.0))
@@ -329,7 +330,10 @@ func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
 			show_notice("SHAKEDOWN - %d%%" % pct)
 		else:
 			show_notice("KNOCKED DOWN")
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
+		state.transition_to(PlayerState.State.LIMP)
+		state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
 		state.start_limp_timer(0.35)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		var attacker := _player_node(int(attacker_id))
@@ -337,6 +341,30 @@ func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
 			var dir: Vector3 = (global_position - attacker.global_position).normalized()
 			_jiggle_velocity = dir * 2.0
 		show_notice("JAB")
+
+# Host applies limp physics to the attacker after a successful parry (knockdown).
+@rpc("any_peer", "call_local", "reliable")
+func parry_riposte(attacker_id: int) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if sender != 0 and sender != 1:
+		return   # only the host may process punches
+	var attacker := _player_node(attacker_id)
+	if attacker == null:
+		return
+	var attacker_bp := attacker.get_node_or_null("BodyPhys")
+	if attacker_bp is BodyPhys:
+		var dir: Vector3 = (attacker.global_position - global_position).normalized()
+		if dir == Vector3.ZERO:
+			dir = -get_node("Head").global_basis.z
+		attacker_bp.set_limp_mode(PhysicsTuning.LIMP_SECONDS)
+		attacker_bp.apply_launch(dir, 10.0)
+	var attacker_state = attacker.get("state")
+	if attacker_state != null:
+		attacker_state.transition_to(PlayerState.State.LIMP)
+		attacker_state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
+		attacker_state.start_limp_timer(PhysicsTuning.LIMP_SECONDS)
+	# No take_punch call here: parry_riposte already applied limp physics +
+	# state directly on the host. The attacker client recovers via limp_recovered.
 
 # Apply limp to this player (called by Combat on the host).
 func apply_ragdoll(direction: Vector3, speed: float, seconds: float) -> void:
@@ -527,6 +555,9 @@ func _physics_process(delta: float) -> void:
 		if multiplayer.is_server():
 			global_position = body_phys.global_position
 			global_basis = body_phys.global_basis
+			_net_pos = global_position
+			_net_yaw = rotation.y
+			_net_state.rpc(_net_pos, _net_yaw, head.rotation.x)
 			# Limp recovery handled via limp_recovered signal / _process timer.
 			return
 		# Client copy of a limp body: interpolate toward _net_state.
@@ -539,9 +570,12 @@ func _physics_process(delta: float) -> void:
 			velocity.y = JUMP_VELOCITY
 	else:
 		velocity.y -= GRAVITY * delta
-	# Preserve throw velocity during launch flight; don't overwrite with input.
+	# Preserve charged-punch lunge velocity during flight: input can't overwrite x/z.
 	var now := Time.get_ticks_msec() / 1000.0
-	if not (input_locked or state.is_input_locked()) and now >= (state.limp_timer if state.limp_timer > 0.0 else 0.0):
+	if combat.is_lunging(now):
+		velocity.x = combat.lunge_velocity().x
+		velocity.z = combat.lunge_velocity().z
+	elif not (input_locked or state.is_input_locked()) and now >= (state.limp_timer if state.limp_timer > 0.0 else 0.0):
 		var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
 		velocity.x = direction.x * SPEED
