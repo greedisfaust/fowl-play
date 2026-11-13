@@ -1,0 +1,20 @@
+[gd_scene format=3 uid="uid://cwwfs3u1twe8a"]
+
+[ext_resource type="PackedScene" uid="uid://btc6fb15a0wuu" path="res://props/base_prop.tscn" id="1_tap7l"]
+[ext_resource type="PropProfile" path="res://resources/profiles/light_prop.tres" id="2_0vwyy"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0vwyy"]
+size = Vector3(0.48, 0.5, 0.48)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tp3u5"]
+size = Vector3(0.48, 0.5, 0.48)
+
+[node name="BaseProp" unique_id=234114675 instance=ExtResource("1_tap7l")]
+item_name = "Box"
+profile = ExtResource("2_0vwyy")
+
+[node name="CollisionShape3D" parent="." index="0" unique_id=2038312627]
+shape = SubResource("BoxShape3D_0vwyy")
+
+[node name="PropMesh" parent="." index="1" unique_id=808986147]
+mesh = SubResource("BoxMesh_tp3u5")

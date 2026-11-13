@@ -1,4 +1,4 @@
-﻿extends RigidBody3D
+extends RigidBody3D
 
 class_name BodyPhys
 
@@ -154,8 +154,9 @@ func _physics_process(delta: float) -> void:
 		if not multiplayer.is_server():
 			global_position = global_position.lerp(target, minf(delta * 40.0, 1.0))
 			return
-		# Host: simulate + send snapshots every frame.
+		# Host: lock position + send snapshots every frame.
 		if multiplayer.is_server():
+			global_position = target
 			_sync_snapshot.rpc(global_transform, linear_velocity, angular_velocity)
 		return
 
@@ -204,4 +205,3 @@ func _sync_snapshot(transform: Transform3D, linear_velocity: Vector3, angular_ve
 	last_synced_linear_velocity = linear_velocity
 	last_synced_angular_velocity = angular_velocity
 	snap_timer = 0.0   # restart interpolation on new snapshot
-

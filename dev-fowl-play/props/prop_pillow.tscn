@@ -1,0 +1,20 @@
+[gd_scene format=3 uid="uid://bhqu4cfo67jxa"]
+
+[ext_resource type="PackedScene" uid="uid://btc6fb15a0wuu" path="res://props/base_prop.tscn" id="1_7jaij"]
+[ext_resource type="PropProfile" path="res://resources/profiles/light_prop.tres" id="2_6xs5k"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_6xs5k"]
+size = Vector3(0.75, 0.18, 0.5)
+
+[sub_resource type="BoxMesh" id="BoxMesh_sln7q"]
+size = Vector3(0.75, 0.18, 0.5)
+
+[node name="BaseProp" unique_id=234114675 instance=ExtResource("1_7jaij")]
+item_name = "Pillow"
+profile = ExtResource("2_6xs5k")
+
+[node name="CollisionShape3D" parent="." index="0" unique_id=2038312627]
+shape = SubResource("BoxShape3D_6xs5k")
+
+[node name="PropMesh" parent="." index="1" unique_id=808986147]
+mesh = SubResource("BoxMesh_sln7q")

@@ -1,0 +1,28 @@
+[gd_resource type="PhysicsTuning" load_steps=2 format=3]
+
+[ext_resource path="res://scripts/physics_tuning.gd" type="Script" id="1"]
+
+[resource]
+script = ExtResource("1")
+tap_max_seconds = 0.25
+charged_punch_hold_seconds = 1.0
+charged_punch_cooldown_seconds = 2.0
+jab_cooldown_seconds = 0.35
+throw_full_charge_seconds = 1.25
+min_throw_speed_mps = 3.0
+max_throw_speed_mps = 14.0
+parry_grace_seconds = 1.5
+parry_cooldown_seconds = 1.5
+limp_seconds = 2.5
+punch_range_m = 3.0
+lunge_speed_mps = 12.0
+gravity_scale = 1.0
+linear_damp = 0.15
+angular_damp = 0.5
+reach_m = 3.2
+snapshot_rate_hz = 15.0
+impact_speed_threshold_mps = 8.0
+limp_mass_kg = 8.0
+prop_mass_kg = 0.6
+large_prop_mass_kg = 4.0
+limp_swing_lag = 8.0

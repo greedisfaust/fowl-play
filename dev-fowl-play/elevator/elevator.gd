@@ -137,6 +137,10 @@ func _build_button() -> void:
 	_button.rotation_degrees = Vector3(90, 0, 0)
 	add_child(_button)
 	_button.pressed.connect(_on_button_pressed)
+	# Expose the single Interactable contract (R1).
+	var interactable := Interactable.new()
+	interactable.kind = Interactable.Kind.USE
+	_button.add_child(interactable)
 
 func _build_zone() -> void:
 	var zone := Area3D.new()

@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://b516simyhm5c6"]
+
+[ext_resource type="PackedScene" uid="uid://btc6fb15a0wuu" path="res://props/base_prop.tscn" id="1_eg88j"]
+[ext_resource type="PropProfile" path="res://resources/profiles/heavy_prop.tres" id="2_52j6m"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_eg88j"]
+size = Vector3(0.55, 1, 0.55)
+
+[sub_resource type="BoxMesh" id="BoxMesh_52j6m"]
+size = Vector3(0.55, 1, 0.55)
+
+[node name="BaseProp" unique_id=234114675 instance=ExtResource("1_eg88j")]
+item_name = "Chair"
+can_pick_up = false
+profile = ExtResource("2_52j6m")
+
+[node name="CollisionShape3D" parent="." index="0" unique_id=2038312627]
+shape = SubResource("BoxShape3D_eg88j")
+
+[node name="PropMesh" parent="." index="1" unique_id=808986147]
+mesh = SubResource("BoxMesh_52j6m")

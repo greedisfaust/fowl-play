@@ -30,6 +30,10 @@ func _ready() -> void:
 	label.font_size = mini(label_font_size, fit)
 	label.outline_size = 4
 	label.position = Vector3(0, size.y * 0.5 + 0.005, 0)
+	# Expose the single Interactable contract (R1).
+	var interactable := Interactable.new()
+	interactable.kind = Interactable.Kind.USE
+	add_child(interactable)
 
 func get_interaction_prompt(_player: Node) -> String:
 	return label_text if label_text != "" else "Press"

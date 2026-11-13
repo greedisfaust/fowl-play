@@ -38,7 +38,7 @@ A device is anything you USE rather than carry: buttons, keys, terminals, plaque
 3. **Wire the action.** In the device script, implement `interact(player)` and `get_interaction_prompt(player)`. Connect input: `InputMap` action "use" (left click / E per `input_table.gd`) → device's `interact()` via the player's focus ray.
 4. **Place it.** Instance into the room at the contract path from `ENVIRONMENT_MIGRATION.md` (e.g. `Apartment/NicknameTerminal`, `Rest/StatusBoard`).
 
-**Success:** aiming at the device shows the prompt + glow; pressing the USE input runs `interact()` on the host only.
+**Success:** aiming at the device shows the prompt + glow; pressing E (USE) runs `interact()` on the host only. Left click (primary) also presses USE-kind devices when idle and not carrying; left click on a GRAB target (prop / limp player) does nothing — grab stays E-only per the DECIDED input table.
 
 ---
 
@@ -78,12 +78,33 @@ Steps:
 1. **Instance the room into `world.tscn`.** In `world.tscn`, add a `Node3D` child named `Apartment`/`Casino`/`Rest` at the contract transform (x = 0 / 100 / 50). Instance `res://rooms/<name>.tscn` into it.
 2. **Build the shell.** Floor (StaticBody3D + collision), four walls, roof opening at the lift. Use mesh + StaticBody3D or baked CSG — prefer static over live CSG (perf budget: ≤ 20 awake rigid bodies, ≤ 4 shadow lights).
 3. **Add lights & text.** OmniLight3D positions/colors/energies from `ENVIRONMENT_MIGRATION.md`. Label3D for room title and flavor text.
-4. **Add furniture & props.** StaticBody3D furniture (push-only, layer PROPS or USE devices) and `PhysicsProp` instances (hand-placed, group `physics_props`, profile assigned).
-5. **Add lore plaques.** `LorePlaque` (StaticBody3D, kind USE, group `lore_guides`), 7 total across rooms (3 Apartment, 3 Casino, 1 Rest). Full text in `ENVIRONMENT_MIGRATION.md`.
-6. **Add the Elevator.** Instance `res://elevator/elevator.tscn` as `Elevator` inside each room. `world.gd` reads `$Apartment/Elevator` etc. and connects `ride_requested`.
-7. **Verify.** Run `./tests/run_checks.ps1` headless; fix regressions; commit.
+4. **Add props.** `PhysicsProp` instances (hand-placed, group `physics_props`, profile assigned). Each prop inherits `res://props/base_prop.tscn` — see "Prop kit" below.
+   - Furniture and lore plaques are **temporarily out of scope** for rooms. Instructions/lore will be delivered via a TV/slideshow screen device instead of `LorePlaque` plaques — that device is TBD, do not add plaques.
+5. **Add the Elevator.** Instance `res://elevator/elevator.tscn` as `Elevator` inside each room. `world.gd` reads `$Apartment/Elevator` etc. and connects `ride_requested`.
+6. **Verify.** Run `./tests/run_checks.ps1` headless; fix regressions; commit.
 
-**Success:** `test_house.tscn` passes all checks (roof collisions, window panes, lift openings clear, tables leave central aisle, 18+ physics_props, 7 lore_guides, throw-speed tuning 3.0→14.0).
+**Success:** `test_house.tscn` passes all checks (roof collisions, window panes, lift openings clear, tables leave central aisle, 18+ physics_props, throw-speed tuning 3.0→14.0). No `LorePlaque` or furniture nodes in room scenes.
+
+---
+
+## Prop kit
+
+Props are authored once as palette scenes under `res://props/`, each inheriting `res://props/base_prop.tscn`, then placed into rooms as instances.
+
+| File | item_name | can_pick_up | Profile | Notes |
+|------|-----------|-------------|---------|-------|
+| `prop_moving_box.tscn` | Moving box | ON | `light_prop.tres` | carryable |
+| `prop_last_clean_cup.tscn` | Last clean cup | ON | `light_prop.tres` | carryable |
+| `prop_carton.tscn` | Empty takeaway carton | ON | `light_prop.tres` | carryable |
+| `prop_radio.tscn` | Battered radio | ON | `light_prop.tres` | carryable |
+| `prop_pillow.tscn` | Threadbare pillow | ON | `light_prop.tres` | carryable |
+| `prop_chair.tscn` | Old chair | OFF | `heavy_prop.tres` | push-only |
+
+Profiles live at `res://resources/profiles/light_prop.tres` (LIGHT, pickup/throw) and `res://resources/profiles/heavy_prop.tres` (HEAVY, no pickup/throw).
+
+**Base prop scene** (`res://props/base_prop.tscn`): root `RigidBody3D` with script `res://interaction/physics_prop.gd`, `collision_layer = 4` (PROPS), `collision_mask = 53`, `CollisionShape3D` + `PropMesh` children. No `Interactable` child in the scene — `physics_prop.gd._ready()` adds it at runtime (kind derived from `can_pick_up`).
+
+**Kit scenes** under `res://kit/`: `wall.tscn`, `window.tscn`, `floor.tscn`, `roof.tscn`. Each is a `StaticBody3D` with `CollisionShape3D` + `MeshInstance3D`, `collision_layer = 1` (WORLD_STATIC), `collision_mask = 53`. Instance into rooms and scale per placement.
 
 ---
 

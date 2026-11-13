@@ -5,7 +5,12 @@ extends StaticBody3D
 @export_multiline var body := ""
 
 func _ready() -> void:
+	collision_layer = 2   # DEVICES layer so the focus ray can hit plaques
 	add_to_group("lore_guides")
+	# Expose the single Interactable contract (R1).
+	var interactable := Interactable.new()
+	interactable.kind = Interactable.Kind.USE
+	add_child(interactable)
 
 func interact(player: Node) -> void:
 	player.read_lore(title, body)

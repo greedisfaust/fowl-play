@@ -31,7 +31,8 @@ func _ready() -> void:
 	player.head.look_at(Vector3(-3.6, 1.5, -2))
 	for prop in get_tree().get_nodes_in_group("physics_props"):
 		if prop.item_name == "Last clean cup":
-			prop.request_use()
+			prop.name = "LastCleanCup"
+			CarryRegistry.hold_request_pickup.rpc_id(1, 1, prop.name)
 	var charge := InputEventMouseButton.new()
 	charge.button_index = MOUSE_BUTTON_RIGHT
 	charge.pressed = true

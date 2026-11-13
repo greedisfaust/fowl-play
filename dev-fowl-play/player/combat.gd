@@ -8,17 +8,17 @@ class_name Combat extends RefCounted
 ## (owner) owns the RPCs and node mutations; player.gd calls Combat from its
 ## input/process/RPC handlers.
 
-const PUNCH_CHARGE_MS := 500      # hold Q this long for a charged punch
-const PARRY_COOLDOWN := 1.5       # seconds before F can parry again
-const PARRY_GRACE := 1.5          # max seconds parry stays active while holding F
-const PUNCH_RANGE := 3.0          # how far a charged punch reaches (bug #9)
-const LUNGE_SPEED := 12.0         # how far a charged punch lunges the puncher
+const PUNCH_CHARGE_MS := int(1000.0 * PhysicsTuning.CHARGED_PUNCH_HOLD_SECONDS)  # hold Q this long for a charged punch
+const PARRY_COOLDOWN := PhysicsTuning.PARRY_COOLDOWN_SECONDS   # seconds before F can parry again
+const PARRY_GRACE := PhysicsTuning.PARRY_GRACE_SECONDS          # max seconds parry stays active while holding F
+const PUNCH_RANGE := PhysicsTuning.PUNCH_RANGE_M          # how far a charged punch reaches (bug #9)
+const LUNGE_SPEED := PhysicsTuning.LUNGE_SPEED_MPS        # how far a charged punch lunges the puncher
 
 var owner: Node3D = null          # the player node (set by player.gd in _ready)
 var head: Node3D = null
 var ray: RayCast3D = null
 var hands: Object = null
-var overlay: Object = null
+var overlay: InteractionOverlay = null
 var player_state: PlayerState = null
 var carrier: Carrier = null
 
@@ -37,7 +37,7 @@ func setup(o: Node3D, h: Node3D, r: RayCast3D, hands_in: Object, ov: Object, ps:
 	head = h
 	ray = r
 	hands = hands_in
-	overlay = ov
+	overlay = ov as InteractionOverlay
 	player_state = ps
 	carrier = c
 
@@ -60,7 +60,7 @@ func set_punch_charge_held(held: bool, started: float = -1.0) -> void:
 # --- punch input logic (client side) -----------------------------------
 
 func can_start_punch_charge() -> bool:
-	return not _punch_charge_held and not player_state.is_knocked_down() and not player_state.is_carrying() and not player_state.is_ragdolled()
+	return not _punch_charge_held and not player_state.is_limp() and not player_state.is_carrying() and not (carrier != null and carrier.is_carrying())
 
 func can_release_punch_charge() -> bool:
 	return _punch_charge_held
@@ -86,7 +86,7 @@ func raycast_hit() -> Node:
 	# fails on Body. Walk up instead.
 	var n: Node = target
 	while n != null:
-		if n.name.match(r"^\d+$"):
+		if str(n.name).match(r"^\d+$"):
 			return n
 		n = n.get_parent()
 	return null
@@ -111,25 +111,50 @@ func expire_parry(now: float) -> void:
 func is_parrying(now: float) -> bool:
 	return _parry_active_until > 0.0 and now < _parry_active_until
 
-# --- ragdoll -----------------------------------------------------------
+# --- limp (knockdown / ragdoll / carried / thrown) ---------------------------
 
-# Ragdoll the target: input locked, tumbling, can be carried.
+# Limp the target: input locked, host-simulated physical body, can be carried.
 # `direction` and `speed` launch them; `seconds` is how long they stay down.
+# The owner's BodyPhys enters limp mode; authority is suspended while limp so
+# the client cannot fabricate a launch (R3 authority model).
 func apply_ragdoll(direction: Vector3, speed: float, seconds: float) -> void:
-	player_state.transition_to(PlayerState.State.KNOCKED_DOWN)
-	player_state.ragdolled_until = Time.get_ticks_msec() / 1000.0 + seconds
-	owner.input_locked = true
-	velocity_apply(direction, speed)
+	player_state.transition_to(PlayerState.State.LIMP)
+	player_state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
+	player_state.start_limp_timer(seconds)
+	# Drop anything being carried before going limp (tell the host to release).
+	if carrier.is_carrying():
+		carrier.request_drop(false)
+	# Launch the body (host-authoritative via BodyPhys).
+	var bp := _body_phys_of(owner)
+	if bp is BodyPhys:
+		bp.apply_launch(direction, speed)
 	# visual slump: look down so the player reads as "downed"
 	if owner.has_node("Head"):
-		owner.get_node("Head").rotation.x = deg_to_rad(60)
-	# drop anything being carried
-	if carrier.is_carrying():
-		carrier.drop(false)
+		(owner.get_node("Head") as Node3D).rotation.x = deg_to_rad(60)
+
+# --- helpers ----------------------------------------------------------------
+
+func velocity_apply(direction: Vector3, speed: float) -> void:
+	if owner is CharacterBody3D:
+		var body: CharacterBody3D = owner
+		body.velocity = direction * speed
+
+func _body_phys_of(node: Node3D) -> BodyPhys:
+	if node == null:
+		return null
+	var bp := node.get_node_or_null("BodyPhys")
+	if bp is BodyPhys:
+		return bp
+	for child in node.get_children():
+		if child is BodyPhys:
+			return child as BodyPhys
+	return null
+
 
 # Launch the owner with a lunge velocity (charged punch).
 func lunge(speed: float) -> void:
-	velocity_apply(-owner.get_node("Head").global_basis.z, speed)
+	if owner.has_node("Head"):
+		velocity_apply(-(owner.get_node("Head") as Node3D).global_basis.z, speed)
 
 # --- host-authoritative punch validation -------------------------------
 
@@ -143,10 +168,6 @@ func validate_punch(sender: Node3D, target: Node3D, charge: float) -> Array:
 
 # --- helpers -----------------------------------------------------------
 
-func velocity_apply(direction: Vector3, speed: float) -> void:
-	if owner is CharacterBody3D:
-		var body: CharacterBody3D = owner
-		body.velocity = direction * speed
-
 # Preload PhysicsProp for type checks.
 const PhysicsProp := preload("res://interaction/physics_prop.gd")
+const InteractionOverlay := preload("res://ui/interaction_overlay.gd")

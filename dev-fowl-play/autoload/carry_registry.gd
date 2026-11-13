@@ -13,6 +13,10 @@ extends Node
 ## Authority: host-only. Clients send requests; host validates reach/state/
 ## single-slot and applies. All any_peer RPCs validate get_remote_sender_id().
 
+# Preload PropProfile so its class_name is registered before headless import
+# processes .tres/.tscn files that reference it (e.g. resources/profiles/*.tres).
+const PropProfile = preload("res://scripts/prop_profile.gd")
+
 signal hold_begin(holder_id: int, held_id: Variant)     # host -> all: a hold started
 signal hold_end(holder_id: int, held_id: Variant, threw: bool)   # host -> all: a hold ended
 signal hold_launch(held_id: Variant, direction: Vector3, speed: float)   # host -> all: a throw launch
@@ -49,6 +53,12 @@ var held_by: Dictionary = {}
 var _last_request: Dictionary = {}
 const REQUEST_COOLDOWN: float = 0.15     # s
 
+# props recently synced via _prop_state_sync — _sync_snapshot skips these
+# for a short window so the client's initial position isn't overwritten by
+# stale snapshots in flight.
+var _just_synced: Dictionary = {}
+const JUST_SYNCED_WINDOW: float = 2.0   # s
+
 func _enter_tree() -> void:
 	if multiplayer.is_server():
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
@@ -74,6 +84,9 @@ func _player_node(id: int) -> Node:
 func _body_phys_of(node: Node3D) -> Node:
 	if node == null:
 		return null
+	# The node itself may be a BodyPhys (PhysicsProp extends BodyPhys).
+	if node.has_method("set_carry_mode"):
+		return node
 	var bp: Node = node.get_node_or_null("BodyPhys")
 	if bp != null and bp.has_method("set_carry_mode"):
 		return bp
@@ -318,7 +331,7 @@ func _on_peer_disconnected(id: int) -> void:
 ## Send every prop's current transform + carry holder to a joining peer so the
 ## new client renders props at their real positions (not their scene home
 ## positions) and can interact with them immediately. Host only; called from
-## Network._on_peer_connected.
+## Network._on_peer_connected and by request_prop_state_sync.
 func _send_prop_state_to_peer(peer_id: int) -> void:
 	if not multiplayer.is_server():
 		return
@@ -326,7 +339,13 @@ func _send_prop_state_to_peer(peer_id: int) -> void:
 	for prop in get_tree().get_nodes_in_group("physics_props"):
 		var t: Transform3D = prop.global_transform
 		var hid: Variant = held_by.get(prop, 0)
-		states.append([prop.name, t, hid])
+		var bp: Node = _body_phys_of(prop as Node3D)
+		var lv: Vector3 = Vector3.ZERO
+		var av: Vector3 = Vector3.ZERO
+		if bp != null:
+			lv = (bp as Node3D).linear_velocity
+			av = (bp as Node3D).angular_velocity
+		states.append([prop.name, t, hid, lv, av])
 	_prop_state_sync.rpc_id(peer_id, states)
 
 ## Client receives current prop state from the host when joining. Applied only
@@ -341,15 +360,35 @@ func _prop_state_sync(states: Array) -> void:
 			continue
 		var name: String = String(entry[0])
 		var t: Transform3D = Transform3D(entry[1])
+		var hid: Variant = entry[2]
 		var prop: Node = _prop_by_name(name)
 		if prop == null:
 			continue
-		prop.global_transform = t
-		# Seed the interpolation source so observer clients don't drift toward
-		# (0,0,0) before the first host snapshot arrives.
 		var bp: Node = _body_phys_of(prop as Node3D)
 		if bp != null:
+			# Wake the body so the physics server doesn't reset it back home,
+			# force it to our exact transform, seed interpolation, and restore
+			# velocity so client-side lerp has a clean target.
+			(bp as Node3D).sleeping = false
 			bp.last_synced_transform = t
+			if entry.size() >= 4:
+				var lv: Vector3 = Vector3(entry[3])
+				var av: Vector3 = Vector3(entry[4])
+				(bp as Node3D).linear_velocity = lv
+				(bp as Node3D).angular_velocity = av
+		prop.global_transform = t
+
+## Client requests current prop state from the host. Called by the joining
+## client once its room is fully instantiated so all props are in the
+## physics_props group and can be matched by name. Host only.
+@rpc("any_peer", "call_remote", "reliable")
+func request_prop_state_sync() -> void:
+	if not multiplayer.is_server():
+		return
+	var peer_id := multiplayer.get_remote_sender_id()
+	if peer_id == 0:
+		peer_id = 1
+	_send_prop_state_to_peer(peer_id)
 
 ## Look up a prop in the physics_props group by its (replicated) name.
 func _prop_by_name(name: String) -> Node:
