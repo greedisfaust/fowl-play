@@ -1,18 +1,19 @@
 extends CharacterBody3D
 
-## Player node: thin coordinator.
-## Input → component calls (Focus / Combat / Carrier / PlayerState), RPCs, node mutation.
-## All carry/combat state lives in the components — no loose `_carrier_id` /
-## `_carried_player_id` / `_knocked_down_until` vars here.
+## Player node: thin coordinator (R9).
+## Input → component calls (Focus / Combat / Carrier / PlayerState), RPCs, node
+## mutation. All carry/combat/limp state lives in the components — no loose
+## `_carrier_id` / `_carried_player_id` / `_knocked_down_until` vars here.
+##
+## The player carries a `BodyPhys` child node (`$BodyPhys`) which owns the
+## limp-physics simulation (knockdown / ragdoll / carried / thrown) when the
+## host simulates the body. While limp, the host drives BodyPhys and the player
+## root is synced to it; the owner's camera stays attached.
 
 const SPEED := 5.0
 const JUMP_VELOCITY := 6.5
 const GRAVITY := 20.0
 const MOUSE_SENS := 0.003
-
-const Interactable := preload("res://interaction/interactable.gd")
-const PhysicsProp := preload("res://interaction/physics_prop.gd")
-const Overlay := preload("res://ui/interaction_overlay.gd")
 
 # Re-exported for tests and callers that still reference them directly.
 const PUNCH_CHARGE_MS := 500      # hold Q this long for a charged punch
@@ -21,18 +22,25 @@ const PARRY_GRACE := 1.5          # max seconds parry stays active while holding
 const PUNCH_RANGE := 3.0          # how far a charged punch reaches (bug #9)
 const LUNGE_SPEED := 12.0         # how far a charged punch lunges the puncher
 
+const Interactable := preload("res://interaction/interactable.gd")
+const PhysicsProp := preload("res://interaction/physics_prop.gd")
+const Overlay := preload("res://ui/interaction_overlay.gd")
+const BodyPhys := preload("res://autoload/body_phys.gd")   # force class_name registration
+
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
 @onready var ray: RayCast3D = $Head/Camera3D/RayCast3D
+@onready var body_phys: BodyPhys = $BodyPhys
 
 # --- network / interpolation state ---
 var _net_pos := Vector3.ZERO
 var _net_yaw := 0.0
 var _net_pitch := 0.0
-var input_locked := false
 var hands: Hands
 var overlay: InteractionOverlay
-var _last_push := 0
+var _last_push := 0.0
+var input_locked := false
+var _q_press_time: float = -1.0   # Q press timestamp: throw charge / drop tap
 var _hover_on := false
 var _hover_point := Vector3.ZERO
 
@@ -40,7 +48,7 @@ var _hover_point := Vector3.ZERO
 var state: PlayerState = PlayerState.new()   # explicit player state machine
 var focus: Focus = Focus.new()               # local "what am I looking at"
 var combat: Combat = Combat.new()            # punch / parry / knockdown / ragdoll
-var carrier: Carrier = Carrier.new()         # single code path for item + downed-player carry
+var carrier: Carrier = Carrier.new()         # single code path for item + limp-player carry
 var _highlight: FocusHighlight = FocusHighlight.new()   # glow/outline on hovered target
 var base_cam_rot: Vector3 = Vector3.ZERO     # base camera rotation (shaking resets to this each frame)
 
@@ -50,11 +58,20 @@ var _jiggle_velocity := Vector3.ZERO
 const JIGGLE_STIFFNESS := 14.0
 const JIGGLE_DAMPING := 0.6
 
+# camera shake (visual only)
+var _wall_hit_until := 0.0          # time until wall-hit stun expires
+var _cam_shake_until := 0.0         # time until camera shake expires
+var _cam_shake_intensity := 1.0
+
 func _enter_tree() -> void:
 	set_multiplayer_authority(str(name).to_int())
 
 func _ready() -> void:
 	var mine := is_multiplayer_authority()
+	# BodyPhys: host simulates limp bodies (authority = host), owner never
+	# fabricates a limp launch. Fresh players are not limp, so BodyPhys starts
+	# frozen on clients and simulating on host.
+	body_phys.set_multiplayer_authority(1 if multiplayer.is_server() else 0)
 	camera.current = mine
 	$Body.visible = not mine
 	$Head/Beak.visible = not mine
@@ -75,7 +92,10 @@ func _ready() -> void:
 		base_cam_rot = camera.rotation   # camera shake resets to this each frame (bug #13)
 	# Wire up components.
 	combat.setup(self, head, ray, hands, overlay, state, carrier)
-	carrier.owner = self
+	carrier._owner = self
+	carrier.bind_registry()
+	# Limp recovery: when BodyPhys limp timer expires, return to IDLE.
+	body_phys.limp_recovered.connect(_on_limp_recovered)
 
 func _update_nameplate() -> void:
 	$NamePlate.text = Network.player_name(str(name).to_int())
@@ -95,20 +115,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if overlay != null and overlay.reading:
 		overlay.scroll_lore(event)
-		if event.is_action_pressed("interact") or event.is_action_pressed("ui_cancel"):
+		if event.is_action_pressed("use") or event.is_action_pressed("ui_cancel"):
 			overlay.close_lore()
-			input_locked = false
 		get_viewport().set_input_as_handled()
-		return
-	if input_locked:
 		return
 	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		return
 	if event.is_action_pressed("ui_cancel"):
-		_cancel_charge()
+		# Cancel any in-progress charge without dropping what we carry (R6: Escape
+		# cancels a throw charge instead of dropping the item).
 		combat.set_punch_charge_held(false, -1.0)
-		input_locked = false
+		carrier.charge_held = false
+		carrier.charge_started = -1.0
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		return
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -118,110 +137,62 @@ func _unhandled_input(event: InputEvent) -> void:
 		head.rotate_x(-event.relative.y * MOUSE_SENS)
 		head.rotation.x = clampf(head.rotation.x, deg_to_rad(-85), deg_to_rad(85))
 		hands.add_sway(event.relative)
-	_handle_carry_input(event)
+	# Context resolution (one place, R6 / R1): what a press does depends on state
+	# and on the kind of thing looked at — no overloaded actions.
+	_carry_input(event)
 	_combat_input(event)
-	_combat_parry_input(event)
-	# Only interact when not carrying anything — fixes the button bug while holding an item/player
-	if not carrier.is_carrying():
-		if event.is_action_pressed("interact") or event.is_action_pressed("primary"):
-			_try_interact()
+	_parry_input(event)
+	if event.is_action_pressed("use") and not carrier.is_carrying():
+		_try_interact()
 
-func _resolve_carry_state() -> void:
-	# Safety: if our Carrier reference is gone (freed prop, disconnect),
-	# clear it so G-drop and Q-throw work again instead of leaving you stuck.
-	if carrier.carried != null and not is_instance_valid(carrier.carried):
-		carrier.drop(false)
+# --- carry input: DROP (tap Q) / THROW (hold Q); GRAB is via E (_try_interact) ----
 
-func is_stunned() -> bool:
-	return state.is_knocked_down() or state.is_ragdolled() or state.is_carried()
-
-# --- carry input (G drop, Q throw, Q pickup) ---
-
-func _handle_carry_input(event: InputEvent) -> void:
+func _carry_input(event: InputEvent) -> void:
 	# Cannot do anything while being carried ourselves.
-	if state.is_carried():
+	if state.is_limp() and state.limp_phase == PlayerState.LimpPhase.LIMP_CARRIED:
 		return
-	# Dropping what we carry (G).
-	if event.is_action_pressed("drop_item"):
-		if carrier.is_carrying():
-			var c: Node = carrier.carried as Node
-			if c is PhysicsProp and c.holder_id != 0:
-				# item: server-mediated release (drop, no throw)
-				c.request_release.rpc_id(1, false)
-			carrier.drop(false)
-		return
-	# Charging / throwing (hold Q or RMB, release).
+	# Charging / throwing (hold Q = throw charge; quick tap Q = drop).
 	if carrier.is_carrying():
-		if event.is_action_pressed("throw_item") or event.is_action_pressed("punch_charge"):
+		if event.is_action_pressed("punch"):
+			_q_press_time = Time.get_ticks_msec() / 1000.0
 			carrier.start_charge()
-			var c: Node = carrier.carried as Node
-			if c is PhysicsProp:
-				c.request_charge.rpc_id(1)   # set prop's charge start so request_release(true) isn't rejected
-		if event.is_action_released("throw_item") or event.is_action_released("punch_charge"):
+		if event.is_action_released("punch"):
+			var held := Time.get_ticks_msec() / 1000.0 - _q_press_time
 			var charge := carrier.release_charge()
 			if charge >= 0.0:
-				_apply_carry_throw(charge)
+				if held < PhysicsTuning.TAP_MAX_SECONDS:
+					# Quick tap Q = drop.
+					carrier.request_drop(false)
+				else:
+					var dir := carrier.throw_direction()
+					carrier.request_throw(dir, charge)
 		return
-	# Empty-handed: Q picks up looked-at target (item or downed player).
-	if event.is_action_pressed("punch_charge"):
-		var target := ray.get_collider() if ray.is_colliding() else null
-		# Raycasts hit body parts — walk up to find the player root.
-		while target != null and not target.name.match(r"^\d+$"):
-			target = target.get_parent()
-		if target != null and Interactable.can(target):
-			# Only downed/stunned players can be picked up — never healthy ones.
-			var t: Variant = target
-			if t.is_stunned():
-				carrier.pickup(target)
-		# One-frame guard so a pickup doesn't also start a punch charge.
-		pass
+	# Empty-handed: GRAB is handled by _try_interact on E (see above).
 
-# Single throw path for item or downed player, replicated appropriately.
-func _apply_carry_throw(charge: float) -> void:
-	if not carrier.is_carrying():
-		return
-	var c: Node = carrier.carried as Node
-	var direction: Vector3 = -get_node("Head").global_basis.z
-	if c is PhysicsProp:
-		# item: server-mediated throw via request_release (server applies
-		# direction from holder's head + speed from its own charge timing).
-		c.request_release.rpc_id(1, true)
-	else:
-		# downed / ragdolled player: launch RPC targeting the carried player.
-		# c.name is set to the carried player's peer ID at spawn (world.gd).
-		var carried_id := str(c.name).to_int()
-		if carried_id != 0:
-			var speed := lerpf(6.0, 16.0, charge)
-			_launch_carried_player.rpc_id(carried_id, direction, speed, carried_id)
-	carrier.drop(true)
+# --- combat input: PUNCH (charge + release), PARRY --------------------------
 
-# --- combat input (punch / jab / parry) ---
+var _punch_input_active := false   # guards Q so a pickup doesn't also start a punch
 
 func _combat_input(event: InputEvent) -> void:
-	# Q starts / releases a punch charge only when empty-handed (no item, no carried player).
 	if carrier.is_carrying():
-		return
-	if event.is_action_pressed("punch_charge"):
-		_combat_start_punch_charge()
-	if event.is_action_released("punch_charge"):
-		_combat_release_punch_charge()
-
-func _combat_start_punch_charge() -> void:
-	if not combat.can_start_punch_charge():
-		return
-	combat.set_punch_charge_held(true, Time.get_ticks_msec() / 1000.0)
-
-func _combat_release_punch_charge() -> void:
-	if not combat.can_release_punch_charge():
-		return
-	var started := combat.punch_charge_started()
-	combat.set_punch_charge_held(false, -1.0)
-	var held_ms := (Time.get_ticks_msec() / 1000.0 - started) * 1000.0
-	var charge := clampf(float(held_ms) / PUNCH_CHARGE_MS, 0.0, 1.0)
-	if held_ms < 150:
-		_combat_do_light_jab()
-	else:
-		_combat_throw_charged_punch(charge)
+		return   # can't punch while carrying
+	if event.is_action_pressed("punch"):
+		if combat.can_start_punch_charge():
+			_punch_input_active = true
+			combat.set_punch_charge_held(true, Time.get_ticks_msec() / 1000.0)
+	if event.is_action_released("punch"):
+		if not _punch_input_active:
+			return
+		_punch_input_active = false
+		if combat.can_release_punch_charge():
+			var started := combat.punch_charge_started()
+			combat.set_punch_charge_held(false, -1.0)
+			var held_ms := (Time.get_ticks_msec() / 1000.0 - started) * 1000.0
+			var charge := clampf(float(held_ms) / PUNCH_CHARGE_MS, 0.0, 1.0)
+			if held_ms < 150:
+				_combat_do_light_jab()
+			else:
+				_combat_throw_charged_punch(charge)
 
 func _combat_do_light_jab() -> void:
 	var now := Time.get_ticks_msec() / 1000.0
@@ -230,11 +201,9 @@ func _combat_do_light_jab() -> void:
 	combat.set_last_press(now)
 	var target := combat.raycast_hit()
 	if target != null:
-		var target_peer := _peer_of_node(target)
+		var target_peer := target.name.to_int()
 		if target_peer != 0:
-			# Host-authoritative: ask the host to validate and apply the punch.
 			punch_request.rpc_id(1, target_peer, 0.0)
-	# Everyone else sees our hand swing; we see it locally.
 	_net_jab.rpc()
 	if hands != null:
 		var p := ray.get_collision_point() if ray.is_colliding() else Vector3.ZERO
@@ -243,11 +212,10 @@ func _combat_do_light_jab() -> void:
 func _combat_throw_charged_punch(charge: float) -> void:
 	var target := combat.raycast_hit()
 	if target != null:
-		var target_peer := _peer_of_node(target)
+		var target_peer := target.name.to_int()
 		if target_peer != 0:
 			var is_charged := charge >= 1.0
 			punch_request.rpc_id(1, target_peer, charge)
-	# Lunge the puncher forward on a charged punch.
 	if charge >= 1.0:
 		combat.lunge(LUNGE_SPEED)
 	_net_punch.rpc(charge)
@@ -255,9 +223,9 @@ func _combat_throw_charged_punch(charge: float) -> void:
 		var p := ray.get_collision_point() if ray.is_colliding() else Vector3.ZERO
 		hands.reach(p)
 
-func _combat_parry_input(event: InputEvent) -> void:
-	if state.is_knocked_down() or state.is_ragdolled() or state.is_carrying():
-		return   # can't parry while down, ragdolled, or carrying
+func _parry_input(event: InputEvent) -> void:
+	if state.is_limp() or state.is_carrying():
+		return   # can't parry while limp or carrying
 	if event.is_action_pressed("parry"):
 		var now := Time.get_ticks_msec() / 1000.0
 		if combat.can_start_parry(now):
@@ -273,27 +241,20 @@ func now_f() -> float:
 func held_name() -> String:
 	if carrier.is_carrying():
 		var c: Node = carrier.carried as Node
-		if c != null:
+		if c != null and c.has_method("get_interaction_prompt"):
 			return c.get_interaction_prompt(self)
 		return ""
 	return ""
 
-# Charge meter value 0..1 (-1 when not charging).
+# Charge meter value 0..1 (-1 when not charging). Client UI only; host re-times
+# the charge on release (R6).
 func charge_meter() -> float:
 	if carrier.is_carrying() and carrier.charge_started >= 0.0:
-		return clampf(float(Time.get_ticks_msec() - carrier.charge_started) / Carrier.CHARGE_MS, 0.0, 1.0)
+		return clampf(float((Time.get_ticks_msec() / 1000.0 - carrier.charge_started)) / Carrier.CHARGE_MS, 0.0, 1.0)
 	return -1.0
 
-# Find the peer id of a node by walking up to the Players/<id> ancestor.
-func _peer_of_node(node: Node) -> int:
-	var n: Node = node
-	while n != null:
-		if n.name.match(r"^\d+$"):
-			return n.name.to_int()
-		n = n.get_parent()
-	return 0
+# --- host-authoritative punch ----------------------------------------------
 
-# Host-authoritative punch request. Client asks the host to validate + apply a punch.
 @rpc("any_peer", "call_local", "reliable")
 func punch_request(target_id: int, charge: float) -> void:
 	var sender := multiplayer.get_remote_sender_id()
@@ -303,18 +264,15 @@ func punch_request(target_id: int, charge: float) -> void:
 	var target := _player_node(target_id)
 	if puncher == null or target == null:
 		return
-	# Validate reach + state (bug #9: PUNCH_RANGE enforced here).
 	var result := combat.validate_punch(puncher, target, charge)
 	var valid := bool(result[0])
 	var is_charged := bool(result[1])
 	if not valid:
 		return
-	# Tell the target to take the punch (authority RPC: only host can trigger it).
 	take_punch.rpc_id(target_id, sender, charge, is_charged)
 
 @rpc("authority", "call_local", "reliable")
 func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
-	# Only the host may trigger punches (bug #8 fix: no client-side knock-down cheat).
 	var sender := multiplayer.get_remote_sender_id()
 	if sender != 0 and sender != 1:
 		return
@@ -327,50 +285,38 @@ func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
 			var attacker_hands := attacker.get_node_or_null("Hands")
 			if attacker_hands != null:
 				attacker_hands.set_guard(false)
-			# Parry reflect: ragdoll the attacker away from the defender.
-			var direction := (attacker.global_position - global_position).normalized()
-			if direction == Vector3.ZERO:
-				direction = -get_node("Head").global_basis.z
-			attacker.apply_ragdoll(direction, 10.0, 2.5)
+		var direction: Vector3 = (attacker.global_position - global_position).normalized()
+		if direction == Vector3.ZERO:
+			direction = -get_node("Head").global_basis.z
+		combat.apply_ragdoll(direction, 10.0, 2.5)   # attacker ragdolled
 		show_notice("PARRIED!")
 		return
 
 	if is_charged:
-		# Charged punch: ragdoll the target, sent flying away from the attacker.
 		var attacker := _player_node(int(attacker_id))
 		var from: Vector3 = attacker.global_position if attacker != null else global_position - get_node("Head").global_basis.z
-		var direction: Vector3 = (global_position - from).normalized()
-		combat.apply_ragdoll(direction, 14.0, 2.5)
-		# Shakedown: only during Day phase (casino), never in lobby/rest
+		combat.apply_ragdoll((global_position - from).normalized(), 14.0, 2.5)
 		if GameState.phase == GameState.Phase.DAY:
 			var pct := 5
 			var new_wallet := maxi(0, GameState.wallet - (GameState.wallet * pct / 100.0))
-			GameState._set_wallet.rpc(new_wallet)   # host-authoritative, replicates to all
+			GameState._set_wallet.rpc(new_wallet)
 			show_notice("SHAKEDOWN - %d%%" % pct)
 		else:
 			show_notice("KNOCKED DOWN")
 	else:
-		# Light jab: brief flinch, jiggle recoil (jelly body response), no knockdown.
-		state.ragdolled_until = Time.get_ticks_msec() / 1000.0 + 0.35
-		input_locked = true
+		state.start_limp_timer(0.35)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		# Jiggle recoil: body recoils backwards from the punch then returns.
 		var attacker := _player_node(int(attacker_id))
 		if attacker != null:
-			var dir := (global_position - attacker.global_position).normalized()
-			_jiggle_velocity = dir * 2.0   # jelly recoil
+			var dir: Vector3 = (global_position - attacker.global_position).normalized()
+			_jiggle_velocity = dir * 2.0
 		show_notice("JAB")
 
-func _cancel_charge() -> void:
-	if carrier.is_carrying():
-		carrier.drop(false)
-
-# Apply ragdoll to this player (called by Combat on the host, or by take_punch).
+# Apply limp to this player (called by Combat on the host).
 func apply_ragdoll(direction: Vector3, speed: float, seconds: float) -> void:
 	combat.apply_ragdoll(direction, speed, seconds)
 
 func read_lore(title: String, text: String) -> void:
-	_cancel_charge()
 	input_locked = true
 	overlay.show_lore(title, text)
 
@@ -381,21 +327,22 @@ func show_notice(message: String) -> void:
 func _process(delta: float) -> void:
 	if not is_multiplayer_authority() or overlay == null:
 		return
-	combat.process(delta)   # expire parry grace -> cooldown
-	# Knockdown expired naturally: restore movement and release carrier link
-	# But NOT while being carried — carried players stay down until thrown.
+	combat.process(delta)
+	# Limp timer expired → recover (host tick). Clients recover via limp_recovered.
 	var now := now_f()
-	if state.ragdolled_until > 0.0 and not state.is_carried() and now >= state.ragdolled_until:
-		state.ragdolled_until = 0.0
-		input_locked = false
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	focus.update(ray, self, input_locked, Input.mouse_mode == Input.MOUSE_MODE_CAPTURED, carrier, held_name())
+	if state.is_limp() and state.limp_timer > 0.0 and now >= state.state_entered_at + state.limp_timer:
+		state.limp_timer = 0.0
+		if is_multiplayer_authority():
+			body_phys.clear_limp_mode()
+			state.transition_to(PlayerState.State.IDLE)
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	focus.update(ray, self, input_locked or state.is_input_locked(), Input.mouse_mode == Input.MOUSE_MODE_CAPTURED, carrier, held_name())
 	var target := focus.target
 	var on := target != null
 	var point := ray.get_collision_point() if on else Vector3.ZERO
 	hands.set_hover(on, point)
 	_highlight.set_target(target)
-	# camera shake decay — reset to base rotation each frame so it never drifts (bug #13)
+	# camera shake decay
 	var t := Time.get_ticks_msec() / 1000.0
 	if t < _cam_shake_until:
 		var s := _cam_shake_intensity * 0.03
@@ -421,27 +368,28 @@ func _exit_tree() -> void:
 func _try_interact() -> void:
 	if carrier.is_carrying():
 		return   # can't interact while carrying something
+	if state.is_limp():
+		return   # limp players can't interact
 	if not ray.is_colliding():
 		return
 	var target = ray.get_collider()
-	# Raycasts hit body parts — walk up to find the interactable target
-	# (player roots implement Interactable via interact()/get_interaction_prompt()).
-	while target != null and not Interactable.can(target):
+	var interactable := Interactable.find(target)
+	while target != null and interactable == null:
 		target = target.get_parent()
-	if target and Interactable.can(target):
-		# Healthy players are NOT interactable — only downed/stunned/carried ones.
-		# Player.interact() enforces this, but we guard here so we don't even
-		# trigger the reach RPC or hand swing on a healthy player.
-		if target.name.match(r"^\d+$"):
+		if target != null:
+			interactable = Interactable.find(target)
+	if target != null and interactable != null and interactable.can_interact(self):
+		# Healthy players are not GRAB targets; only limp/carried ones are.
+		if str(target.name).match(r"^\d+$"):
 			var t: Variant = target
-			if not t.is_stunned():
+			if t.has_method("is_limp") and not t.is_limp():
 				return
 		var p := ray.get_collision_point()
 		hands.reach(p)
-		_net_reach.rpc(p)   # tell everyone else where to swing this player's hand
-		target.interact(self)
+		_net_reach.rpc(p)
+		interactable.interact(self)
 
-func _player_node(id: int) -> Node3D:
+func _player_node(id: int) -> Node:
 	var world := get_tree().get_first_node_in_group("game_world")
 	return world.get_node_or_null("Players/" + str(id)) if world != null else null
 
@@ -453,26 +401,12 @@ func _net_jab() -> void:
 func _net_punch(_charge: float) -> void:
 	hands.reach(ray.get_collision_point())
 
-# Called by physics_prop when this player picks up or drops an item.
-# Delegates to Carrier (single carry path).
-func _set_carry_item(item: PhysicsProp) -> void:
-	carrier.pickup(item)
+# --- limp-player Carryable interface (when THIS player is carried) ----------
 
-func _clear_carry_item() -> void:
-	carrier.drop(false)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-
-func get_interaction_prompt(_player: Node) -> String:
-	if state.is_ragdolled() or state.is_knocked_down():
-		return "Pick up"
-	return "Interact"
-
-# --- carry / throw knocked-down / ragdolled players (Carryable interface) ---
-
-# Called by Carrier when this player is picked up as a carried body.
+# Called by Carrier / CarryRegistry when this player is picked up as a carried body.
 func pickup(holder: Node) -> void:
-	state.transition_to(PlayerState.State.CARRIED)
-	input_locked = true
+	state.transition_to(PlayerState.State.LIMP)
+	state.set_limp_phase(PlayerState.LimpPhase.LIMP_CARRIED)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	head.rotation.x = deg_to_rad(60)
 	# Detach from world so the carrier can move us.
@@ -480,15 +414,15 @@ func pickup(holder: Node) -> void:
 	if parent != null:
 		parent.remove_child(self)
 	holder.add_child(self)
+	body_phys.freeze = true
 
 # Called by Carrier on drop or throw.
 func release(throw: bool, direction: Vector3, speed: float) -> void:
 	if throw:
-		velocity = direction * speed
-		state.transition_to(PlayerState.State.THROWN)
-		state.ragdolled_until = Time.get_ticks_msec() / 1000.0 + 2.5
+		body_phys.apply_launch(direction, speed)
+		state.set_limp_phase(PlayerState.LimpPhase.LIMP_THROWN)
+		state.start_limp_timer(2.5)
 		head.rotation.x = deg_to_rad(60)
-		# Detach from carrier before re-adding to world.
 		var parent := get_parent()
 		if parent != null:
 			parent.remove_child(self)
@@ -496,11 +430,11 @@ func release(throw: bool, direction: Vector3, speed: float) -> void:
 		if world != null:
 			world.add_child(self)
 	else:
-		# Drop back to the world.
-		state.transition_to(PlayerState.State.IDLE)
-		input_locked = false
+		state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
+		state.start_limp_timer(2.5)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		head.rotation.x = 0.0
+		body_phys.freeze = not is_multiplayer_authority()
 		var parent := get_parent()
 		if parent != null:
 			parent.remove_child(self)
@@ -509,170 +443,93 @@ func release(throw: bool, direction: Vector3, speed: float) -> void:
 			world.add_child(self)
 
 func is_carried() -> bool:
-	return state.is_carried()
+	return state.is_limp() and state.limp_phase == PlayerState.LimpPhase.LIMP_CARRIED
+
+# True while this player is limp (knocked down / carried / thrown).
+func is_limp() -> bool:
+	return state.is_limp()
 
 func get_carry_offset() -> Vector3:
-	# Both-hands offset for carried players: lower, centered in front of carrier.
 	return Vector3(0.0, 0.2, -1.0)
 
 func get_throw_speed(charge: float) -> float:
 	return lerpf(6.0, 16.0, clampf(charge, 0.0, 1.0))
 
-# Called by another player pressing Q while looking at this downed/ragdolled player.
-# Runs on all machines; the RPC sets CARRYING/CARRIED state on each owner's machine.
+# Called by another player looking at this limp player. Host applies via CarryRegistry.
 func interact(player: Node) -> void:
-	if not (state.is_knocked_down() or state.is_ragdolled()):
-		return  # not downed, can't be picked up
-	if state.is_carried():
+	if not state.is_limp():
+		return  # not limp, can't be picked up
+	if state.limp_phase == PlayerState.LimpPhase.LIMP_CARRIED:
 		return  # already being carried
 	var carrier_id := str(player.name).to_int()
 	if carrier_id == 0:
 		carrier_id = 1
 	var carrier_node := _player_node(carrier_id)
 	if carrier_node == null or carrier_node.carrier.is_carrying():
-		return  # carrier already holding someone
-	var carried_id := str(name).to_int()
-	if carried_id == 0:
-		carried_id = 1
-	_pickup_request.rpc(carrier_id, carried_id)
-
-@rpc("any_peer", "call_local", "reliable")
-func _pickup_request(carrier_id: int, carried_id: int) -> void:
-	# Runs on all machines. Each machine sets state for the player it owns.
-	var my_id := multiplayer.get_unique_id()
-	if my_id == carrier_id:
-		var carrier_node := _player_node(carrier_id)
-		if carrier_node != null:
-			carrier_node.state.transition_to(PlayerState.State.CARRYING)
-	elif my_id == carried_id:
-		state.transition_to(PlayerState.State.CARRIED)
-		_carrier_id = carrier_id
-		input_locked = true
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		head.rotation.x = deg_to_rad(60)
-
-# Spring/lerp follow for carried players (replaces the old _carry_tick snap).
-# Runs on the carried player's machine each physics frame.
-func _carry_follow(delta: float) -> void:
-	if not state.is_carried() or _carrier_id == 0:
 		return
-	var carrier := _player_node(_carrier_id)
-	if carrier == null:
-		return
-	var offset := carrier.global_basis * get_carry_offset()
-	var target := carrier.global_position + offset
-	# Raycast from carrier to target: stop at walls so carried player doesn't clip.
-	var from := carrier.global_position
-	var query := PhysicsRayQueryParameters3D.create(from, target)
-	query.exclude = [carrier.get_rid(), get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if not hit.is_empty():
-		target = hit.position + hit.normal * 0.25
-	# Spring toward target (soft, not robotic).
-	global_position = global_position.lerp(target, minf(delta * 10.0, 1.0))
-	global_basis = carrier.global_basis
+	CarryRegistry.hold_request_pickup.rpc_id(1, carrier_id, name)
 
-# Ragdoll physics: tumble while flying, slide to a stop, recover when slow.
-func _ragdoll_physics(delta: float) -> void:
-	if not state.is_ragdolled() and not state.is_knocked_down():
+# Limp recovery: BodyPhys limp timer expired. Return authority to owner at
+# current transform, transition LIMP -> IDLE.
+func _on_limp_recovered(body: Node) -> void:
+	if body != body_phys:
 		return
-	if not is_on_floor():
-		velocity.y -= GRAVITY * delta
-	# Tumble visual: rotate the head over time for a limp look.
-	head.rotation.x += delta * 2.0
-	head.rotation.z += delta * 1.5
-	move_and_slide()
-	# Recover when speed drops below threshold or ragdoll time expired.
-	var now := now_f()
-	if velocity.length() < 0.5 or (state.ragdolled_until > 0.0 and now >= state.ragdolled_until):
-		state.ragdolled_until = 0.0
-		state.transition_to(PlayerState.State.IDLE)
-		input_locked = false
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		head.rotation.x = 0.0
-		head.rotation.z = 0.0
+	state.transition_to(PlayerState.State.IDLE)
+	state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	head.rotation.x = 0.0
+	head.rotation.z = 0.0
+	body_phys.freeze = not is_multiplayer_authority()
+	# Resync owner to the body's current transform (no wall snap).
+	if is_multiplayer_authority():
+		global_position = body_phys.global_position
 		velocity = Vector3.ZERO
 
-# Jiggle spring: visual wobble that recoils then returns (jelly body response).
-func _apply_jiggle(delta: float) -> void:
-	if _jiggle_velocity.length() < 0.01:
-		_jiggle_velocity = Vector3.ZERO
-		return
-	# Spring toward zero (original state).
-	_jiggle_velocity -= _jiggle_offset * JIGGLE_STIFFNESS * delta
-	_jiggle_velocity *= 1.0 - JIGGLE_DAMPING * delta
-	_jiggle_offset += _jiggle_velocity * delta
-	# Apply as a visual offset to the body mesh (not collision).
-	if $Body != null:
-		$Body.position = _jiggle_offset
-
-@rpc("any_peer", "call_local", "reliable")
-func _launch_carried_player(direction: Vector3, speed: float, target_id: int) -> void:
-	# Runs on the carried player's machine: release with launch velocity.
-	var my_id := multiplayer.get_unique_id()
-	if my_id != target_id:
-		return
-	_carrier_id = 0
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	velocity = direction * speed
-	state.ragdolled_until = Time.get_ticks_msec() / 1000.0 + 2.5
-	head.rotation.x = deg_to_rad(60)
-	var world = get_tree().get_first_node_in_group("game_world")
-	if world != null:
-		world.add_child(self)
-
-@rpc("authority", "call_local", "reliable")
-func teleport_to(pos: Vector3, yaw: float) -> void:
-	var sender := multiplayer.get_remote_sender_id()
-	if sender != 0 and sender != 1:
-		return   # only the host may move players
-	position = pos
-	carrier.drop(false)   # bug #11: teleporting must not let you keep carried items/players
-	_cancel_charge()
-	if overlay != null:
-		overlay.close_lore()
-		input_locked = false
-	rotation.y = yaw
-	_net_yaw = yaw
-	velocity = Vector3.ZERO
-	_net_pos = pos
+# --- physics process ---------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
 	if not is_multiplayer_authority():
+		# Remote copy: interpolate toward the owner's authoritative state.
+		position = position.lerp(_net_pos, 0.3)
+		rotation.y = lerp_angle(rotation.y, _net_yaw, 0.3)
+		head.rotation.x = lerpf(head.rotation.x, _net_pitch, 0.3)
+		return
+	if state.is_limp():
+		# Limp: BodyPhys simulates (host) or is frozen (client). Sync the root
+		# to BodyPhys when we are the simulating authority.
+		if multiplayer.is_server():
+			global_position = body_phys.global_position
+			global_basis = body_phys.global_basis
+			# Limp recovery handled via limp_recovered signal / _process timer.
+			return
+		# Client copy of a limp body: interpolate toward _net_state.
 		position = position.lerp(_net_pos, 0.3)
 		rotation.y = lerp_angle(rotation.y, _net_yaw, 0.3)
 		head.rotation.x = lerpf(head.rotation.x, _net_pitch, 0.3)
 		return
 	if is_on_floor():
-		if Input.is_action_just_pressed("jump") and not input_locked:
+		if Input.is_action_just_pressed("jump") and not (input_locked or state.is_input_locked()):
 			velocity.y = JUMP_VELOCITY
 	else:
 		velocity.y -= GRAVITY * delta
-	# Preserve throw velocity during launch flight; don't overwrite it with input
+	# Preserve throw velocity during launch flight; don't overwrite with input.
 	var now := Time.get_ticks_msec() / 1000.0
-	if not input_locked and now >= (state.ragdolled_until if state.ragdolled_until > 0.0 else 0.0):
+	if not (input_locked or state.is_input_locked()) and now >= (state.limp_timer if state.limp_timer > 0.0 else 0.0):
 		var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
 		velocity.x = direction.x * SPEED
 		velocity.z = direction.z * SPEED
-	if state.is_carried():
-		_carry_follow(delta)   # being carried: follow carrier with spring
-	elif state.is_ragdolled() or state.is_knocked_down():
-		_ragdoll_physics(delta)   # tumbling physics
-	else:
-		move_and_slide()
-	if Time.get_ticks_msec() - _last_push > 180:
+	move_and_slide()
+	if Time.get_ticks_msec() - _last_push > 0.18:
 		for i in get_slide_collision_count():
 			var collider = get_slide_collision(i).get_collider()
 			if collider is PhysicsProp:
-				collider.request_push.rpc_id(1)
-				_last_push = Time.get_ticks_msec()
+				collider.request_push.rpc_id(1)   # host-validated push via CarryRegistry
+				_last_push = Time.get_ticks_msec() / 1000.0
 				break
 	hands.set_speed(Vector2(velocity.x, velocity.z).length() if is_on_floor() else 0.0)
 	_net_state.rpc(position, rotation.y, head.rotation.x)
-	# Apply jiggle spring (visual only).
 	_apply_jiggle(delta)
-	# wall-hit VFX: if we're moving fast and collide with a wall, play impact
 	if velocity.length() > 8.0 and not is_on_floor():
 		var wall_hit := false
 		for i in get_slide_collision_count():
@@ -684,13 +541,23 @@ func _physics_process(delta: float) -> void:
 			_wall_hit_until = Time.get_ticks_msec() / 1000.0 + 0.3
 			_wall_hit_vfx.rpc(velocity.length())
 
+# Jiggle spring: visual wobble that recoils then returns (jelly body response).
+func _apply_jiggle(delta: float) -> void:
+	if _jiggle_velocity.length() < 0.01:
+		_jiggle_velocity = Vector3.ZERO
+		return
+	_jiggle_velocity -= _jiggle_offset * JIGGLE_STIFFNESS * delta
+	_jiggle_velocity *= 1.0 - JIGGLE_DAMPING * delta
+	_jiggle_offset += _jiggle_velocity * delta
+	if $Body != null:
+		$Body.position = _jiggle_offset
+
 @rpc("any_peer", "call_local", "reliable")
 func _wall_hit_vfx(speed: float) -> void:
 	var intensity := clampf(speed / 20.0, 0.5, 1.5)
 	show_notice("WALL SLAM!")
 	if hands != null:
 		hands.shake(intensity)
-	# camera shake (this peer's own camera) — applied in _process below
 	_cam_shake_until = Time.get_ticks_msec() / 1000.0 + 0.25
 	_cam_shake_intensity = intensity
 
@@ -700,7 +567,7 @@ func _net_state(pos: Vector3, yaw: float, pitch: float) -> void:
 	_net_yaw = yaw
 	_net_pitch = pitch
 
-@rpc("authority", "call_remote", "reliable")
+@rpc("authority", "call_remote", "unreliable")
 func _net_hover_state(on: bool, point: Vector3) -> void:
 	hands.set_hover(on, point)
 
@@ -708,17 +575,22 @@ func _net_hover_state(on: bool, point: Vector3) -> void:
 func _net_hover_point(point: Vector3) -> void:
 	hands.update_hover_point(point)
 
-@rpc("authority", "call_remote", "reliable")
+@rpc("authority", "call_remote", "unreliable")
 func _net_reach(point: Vector3) -> void:
-	hands.reach(point)   # runs on everyone else's copy of this player
+	hands.reach(point)
 
-# Legacy vars kept for test compatibility during transition.
-var _charge_started := -1
-var _knocked_down_until := 0.0
-var _carrier_id := 0
-var _carried_player_id := 0
-var _pickup_attempting := false
-var _just_picked_up := false
-var _wall_hit_until := 0.0          # time until wall-hit stun expires
-var _cam_shake_until := 0.0         # time until camera shake expires
-var _cam_shake_intensity := 1.0
+@rpc("authority", "call_local", "reliable")
+func teleport_to(pos: Vector3, yaw: float) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if sender != 0 and sender != 1:
+		return   # only the host may move players
+	position = pos
+	CarryRegistry.on_teleport(str(name).to_int())   # drop what we carry
+	carrier.charge_started = -1.0
+	carrier.charge_held = false
+	if overlay != null:
+		overlay.close_lore()
+	rotation.y = yaw
+	_net_yaw = yaw
+	velocity = Vector3.ZERO
+	_net_pos = pos

@@ -5,7 +5,9 @@ class_name BodyPhys
 ## Centralized physical-body foundation for props AND limp players.
 ##
 ## One class owns: authority, impulses/launch, carry mode, limp mode,
-## sleep/wake, impact events, and ALL physics tuning constants.
+## sleep/wake, impact events, and changed-only snapshots.
+##
+## All tuning numbers come from PhysicsTuning (one class_name with units in names).
 ##
 ## Authority model (host-authoritative):
 ##   - Host (peer 1) simulates the body: freeze = false, is_authority = true.
@@ -14,29 +16,13 @@ class_name BodyPhys
 ##     suspended while limp, so a client can never fabricate a launch.
 ##
 ## Replication: host sends _sync_snapshot only when the transform changes,
-## at SNAPSHOT_RATE. Snapshots stop while the body is sleeping or carried,
-## and resume on wake/release.
+## at the rate from PhysicsTuning. Snapshots stop while the body is sleeping
+## or carried, and resume on wake/release.
 ##
 ## Consumers today: PhysicsProp (props), limp players (Phase 3).
-## Two real consumers justifies this class (R9).
 
 signal body_impact(speed: float, position: Vector3)   # wall-slam VFX hook
-
-# --- tuning constants: one place for everything --------------------------
-
-const GRAVITY_SCALE: float = 1.0
-const LINEAR_DAMP: float = 0.15          # was 0.8 on props (too floaty)
-const ANGULAR_DAMP: float = 0.5
-const MIN_THROW_SPEED: float = 3.0       # m/s — tap throw
-const MAX_THROW_SPEED: float = 14.0      # m/s — full charged throw
-const CHARGE_SECONDS: float = 1.25       # s — hold time for full charge
-const REACH: float = 3.2                 # m — pickup/reach distance
-const SNAPSHOT_RATE: float = 1.0 / 15.0  # s — host snapshot interval
-const IMPACT_SPEED_THRESHOLD: float = 8.0   # m/s — wall-slam VFX fires above this
-const LIMP_MASS: float = 8.0             # kg — limp players are heavy
-const PROP_MASS: float = 0.6             # kg — small carryable props
-const LARGE_PROP_MASS: float = 4.0       # kg — furniture / large props
-const LIMP_SWING_LAG: float = 8.0        # spring follow speed for carried limp bodies
+signal limp_recovered(body: Node)                     # limp timer expired
 
 # --- state ----------------------------------------------------------------
 
@@ -46,25 +32,25 @@ var carry_anchor: Node3D = null      # the carrier we follow while carried
 var carry_offset: Vector3 = Vector3.ZERO   # offset from anchor
 var limp_mode: bool = false          # true while limp (ground / carried / thrown)
 var limp_timer: float = 0.0          # seconds remaining before recovery
-var snap_timer: float = 0.0          # accumulator for snapshot rate limiting
+var snap_timer: float = 0.0          # accumulator for client interpolation
 var last_synced_transform: Transform3D = Transform3D.IDENTITY
 var last_synced_linear_velocity: Vector3 = Vector3.ZERO
 var last_synced_angular_velocity: Vector3 = Vector3.ZERO
 
+var _snapshot_time: float = 0.0      # accumulator for host snapshot rate limiting
+
 func _enter_tree() -> void:
-	if multiplayer.is_server():
-		set_multiplayer_authority(1)
-		is_authority = true
-		freeze = false
-	else:
-		is_authority = false
-		freeze = true		# Clients do not simulate; they interpolate toward snapshots.
+	# Authority can't be resolved here: _enter_tree may run before
+	# multiplayer.multiplayer_peer is configured. Defaults below; _physics_process
+	# reconciles is_authority/freeze with multiplayer.is_server() each frame.
+	is_authority = false
+	freeze = true
 
 func _ready() -> void:
-	mass = PROP_MASS
-	linear_damp = LINEAR_DAMP
-	angular_damp = ANGULAR_DAMP
-	gravity_scale = GRAVITY_SCALE
+	mass = PhysicsTuning.PROP_MASS_KG
+	linear_damp = PhysicsTuning.LINEAR_DAMP
+	angular_damp = PhysicsTuning.ANGULAR_DAMP
+	gravity_scale = PhysicsTuning.GRAVITY_SCALE
 	continuous_cd = true
 	add_to_group("body_phys")
 
@@ -87,7 +73,7 @@ func clear_carry_mode(launch: Vector3 = Vector3.ZERO) -> void:
 	carry_offset = Vector3.ZERO
 	freeze = not is_authority
 	if launch != Vector3.ZERO and is_authority:
-		apply_central_impulse(launch)
+		linear_velocity = launch
 		sleeping = false
 
 # --- limp mode ------------------------------------------------------------
@@ -96,7 +82,7 @@ func clear_carry_mode(launch: Vector3 = Vector3.ZERO) -> void:
 func set_limp_mode(seconds: float) -> void:
 	limp_mode = true
 	limp_timer = seconds
-	mass = LIMP_MASS
+	mass = PhysicsTuning.LIMP_MASS_KG
 	freeze = not is_authority
 	sleeping = false
 
@@ -104,13 +90,13 @@ func set_limp_mode(seconds: float) -> void:
 func clear_limp_mode() -> void:
 	limp_mode = false
 	limp_timer = 0.0
-	mass = PROP_MASS
+	mass = PhysicsTuning.PROP_MASS_KG
 	freeze = not is_authority
 
 # --- impulses / launch ----------------------------------------------------
 
 ## Apply an instantaneous impulse (push).
-func apply_impulse(direction: Vector3, speed: float) -> void:
+func apply_body_impulse(direction: Vector3, speed: float) -> void:
 	if is_authority:
 		apply_central_impulse(direction.normalized() * speed)
 		sleeping = false
@@ -125,18 +111,43 @@ func apply_launch(direction: Vector3, speed: float) -> void:
 # --- physics process ------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
+	# Reconcile authority with the network role each frame: _enter_tree may run
+	# before multiplayer.multiplayer_peer is configured. Host simulates; clients
+	# freeze + interpolate toward host snapshots. Carry mode keeps freeze = true
+	# on the host so carried bodies don't simulate independently.
+	if multiplayer.is_server():
+		is_authority = true
+		if not carry_mode:
+			freeze = false
+			# Claim multiplayer authority (peer 1) so _sync_snapshot RPCs are
+			# allowed. _enter_tree runs before the peer is configured, so we do
+			# it here once multiplayer.is_server() is true.
+			if get_multiplayer_authority() != 1:
+				set_multiplayer_authority(1)
+	else:
+		is_authority = false
+		freeze = true
+
 	if carry_mode and carry_anchor != null:
 		# Follow the carrier anchor with a spring (weight + slight swing).
-		var target := carry_anchor.global_position + carry_anchor.global_basis * carry_offset
+		# Use the Head's basis (yaw + pitch) so the carried object follows
+		# where the carrier is looking, not just their body yaw.
+		var anchor_basis: Basis = carry_anchor.global_basis
+		if carry_anchor.has_node("Head"):
+			anchor_basis = (carry_anchor.get_node("Head") as Node3D).global_basis
+		var target: Vector3 = carry_anchor.global_position + anchor_basis * carry_offset
 		# Raycast from anchor to target: stop at walls so carried bodies don't clip.
-		var query := PhysicsRayQueryParameters3D.create(carry_anchor.global_position, target)
+		var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(carry_anchor.global_position, target)
 		query.exclude = [carry_anchor.get_rid(), get_rid()]
-		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		var hit: Dictionary = get_viewport().get_world_3d().direct_space_state.intersect_ray(query)
 		if not hit.is_empty():
 			target = hit.position + hit.normal * 0.25
-		global_position = global_position.lerp(target, minf(delta * LIMP_SWING_LAG, 1.0))
+		global_position = global_position.lerp(target, minf(delta * PhysicsTuning.LIMP_SWING_LAG, 1.0))
 		if limp_mode:
 			global_basis = carry_anchor.global_basis
+		# Host: send carried-body snapshots every frame so clients see smooth carried motion.
+		if multiplayer.is_server():
+			_sync_snapshot.rpc(global_transform, linear_velocity, angular_velocity)
 		return
 
 	if limp_mode:
@@ -147,38 +158,24 @@ func _physics_process(delta: float) -> void:
 			# Recovery: signal the registry to transition back to IDLE.
 			_ready_to_recover()
 
-	if not is_authority:
-		# Client: interpolate toward the last host snapshot.
-		snap_timer += delta
-		if snap_timer >= SNAPSHOT_RATE:
-			snap_timer = 0.0
-			global_position = global_position.lerp(last_synced_transform.origin, minf(delta * 18.0, 1.0))
-			quaternion = quaternion.slerp(last_synced_transform.basis.get_rotation_quaternion(), minf(delta * 18.0, 1.0))
+	if not multiplayer.is_server():
+		# Client: interpolate toward the last host snapshot every frame. Clients never send snapshots.
+		global_position = global_position.lerp(last_synced_transform.origin, minf(delta * 12.0, 1.0))
+		quaternion = quaternion.slerp(last_synced_transform.basis.get_rotation_quaternion(), minf(delta * 12.0, 1.0))
 		return
 
 	# Host: simulate + impact detection + changed-only snapshots.
-	var speed := linear_velocity.length()
-	if speed > IMPACT_SPEED_THRESHOLD:
-		for i in get_contact_count():
-			var collider := get_contact_collider(i)
-			if collider is RigidBody3D or collider is StaticBody3D:
-				body_impact.emit(speed, global_position)
-				break
-
+	var speed: float = linear_velocity.length()
+	if speed > PhysicsTuning.IMPACT_SPEED_THRESHOLD_MPS:
+		body_impact.emit(speed, global_position)
+	var interval: float = PhysicsTuning.get_snapshot_interval_seconds()
 	_snapshot_time += delta
-	if _snapshot_time >= SNAPSHOT_RATE and not sleeping and not carry_mode:
+	if _snapshot_time >= interval and not sleeping:
 		_snapshot_time = 0.0
 		_sync_snapshot.rpc(global_transform, linear_velocity, angular_velocity)
 		last_synced_transform = global_transform
 		last_synced_linear_velocity = linear_velocity
 		last_synced_angular_velocity = angular_velocity
-
-var _snapshot_time: float = 0.0
-
-# Recovery signal: emitted by the host when limp time expires. CarryRegistry
-# / player state machine listen for it and transition LIMP -> IDLE, returning
-# authority to the owner at the body's current transform.
-signal limp_recovered(body: Node)
 
 ## Called by _physics_process when the limp timer expires. Emits limp_recovered
 ## so the host can clear limp mode and return authority to the owner.
@@ -187,17 +184,14 @@ func _ready_to_recover() -> void:
 
 # --- replication ----------------------------------------------------------
 
-@rpc("authority", "call_remote", "unreliable_ordered")
+@rpc("any_peer", "call_remote", "unreliable_ordered")
 func _sync_snapshot(transform: Transform3D, linear_velocity: Vector3, angular_velocity: Vector3) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if sender != 0 and sender != 1:
+		return   # only the host may send snapshots
 	if is_authority:
 		return   # host already simulates; ignore its own snapshot
 	last_synced_transform = transform
 	last_synced_linear_velocity = linear_velocity
 	last_synced_angular_velocity = angular_velocity
 	snap_timer = 0.0   # restart interpolation on new snapshot
-
-# --- sleep / wake ---------------------------------------------------------
-
-func _sleeping_changed() -> void:
-	# Replication pauses while sleeping, resumes on wake. Handled in
-	# _physics_process via the sleeping check above.
