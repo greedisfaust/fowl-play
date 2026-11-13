@@ -268,23 +268,34 @@ func set_color(c: Color) -> void:
 	_mat.albedo_color = c
 
 # Box both hands in front of the face (parry guard) or relax back to normal.
+# `active` = true pulls both hands up in front of the face, palms forward.
+# Smooth tween in/out so the guard doesn't snap instantly.
 func set_guard(active: bool) -> void:
 	if _rigs.is_empty():
 		return
+	if _guard_tween != null:
+		_guard_tween.kill()
+		_guard_tween = null
+	var tw := create_tween()
+	_guard_tween = tw
+	var duration := 0.18
 	for i in 2:
 		var hand := _hands[i]
 		var rig := _rigs[i]
+		var side := -1.0 if i == 0 else 1.0
 		if active:
-			# Pull both hands up in front of the face, palms forward.
-			var side := -1.0 if i == 0 else 1.0
-			rig.position = Vector3(side * 0.12, 0.08, -0.30)
-			hand.quaternion = Quaternion(Vector3.RIGHT, deg_to_rad(-20)) * Quaternion(Vector3.UP, deg_to_rad(side * 15))
+			var target_pos := Vector3(side * 0.12, 0.08, -0.30)
+			var target_q := Quaternion(Vector3.RIGHT, deg_to_rad(-20)) * Quaternion(Vector3.UP, deg_to_rad(side * 15))
+			tw.tween_property(rig, "position", target_pos, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			tw.parallel().tween_property(hand, "quaternion", target_q, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		else:
-			rig.position = _rest[i]
-			hand.quaternion = _rest_q[i]
+			tw.tween_property(rig, "position", _rest[i], duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			tw.parallel().tween_property(hand, "quaternion", _rest_q[i], duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.finished.connect(func() -> void: _guard_tween = null)
 
 var _shake_until := 0.0
 var _shake_intensity := 1.0
+var _guard_tween: Tween = null
 
 func shake(intensity: float) -> void:
 	_shake_intensity = clampf(intensity, 0.0, 2.0)

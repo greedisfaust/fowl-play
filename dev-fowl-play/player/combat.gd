@@ -149,18 +149,27 @@ func lunge_velocity() -> Vector3:
 ## Steer the lunge toward a look direction mid-flight (camera-arc punch).
 ## `look_dir` is where the camera is facing (e.g. -camera.global_basis.z).
 ## `strength` is how hard to pull toward that direction (0..1).
-func steer_lunge(look_dir: Vector3, strength: float) -> void:
+## `max_turn_rad_per_sec` limits how fast the aim can swing so players can't
+## instantly look behind mid-lunge.
+func steer_lunge(look_dir: Vector3, strength: float, max_turn_rad_per_sec: float = 3.0) -> void:
 	if not is_lunging(Time.get_ticks_msec() / 1000.0):
 		return
 	var target := look_dir.normalized()
 	var current := _lunge_velocity.normalized()
 	if current == Vector3.ZERO:
 		current = target
-	var blended := current.lerp(target, clampf(strength, 0.0, 1.0))
-	if blended == Vector3.ZERO:
+	# Cap the turn rate so the arc can't snap around instantly.
+	var max_delta := max_turn_rad_per_sec * PhysicsTuning.get_snapshot_interval_seconds()
+	var angle := current.angle_to(target)
+	if absf(angle) < 0.001:
 		return
+	var step := clampf(angle, -max_delta, max_delta)
+	var axis := current.cross(target)
+	if axis == Vector3.ZERO:
+		axis = Vector3.UP
+	var rotated := current.rotated(axis, step)
 	var speed := _lunge_velocity.length()
-	_lunge_velocity = blended.normalized() * speed
+	_lunge_velocity = rotated.normalized() * speed
 
 # Launch the owner with a lunge velocity (charged punch). Deprecated: use
 # start_lunge() instead so velocity survives _physics_process input overwrite.
