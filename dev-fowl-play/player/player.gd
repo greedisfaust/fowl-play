@@ -243,9 +243,8 @@ func _parry_input(event: InputEvent) -> void:
 			# Host-authoritative: tell the host to start parry + spawn barrier.
 			parry_request.rpc_id(1)
 	if event.is_action_released("parry"):
-		# Host will despawn barrier when parry grace expires.
-		# Tell all clients the parry ended (guard drops, barrier gone).
-		parry_request.rpc_id(1)   # reuse: host will call expire_parry logic
+		# End parry immediately: guard drops, barrier despawns.
+		parry_end_request.rpc_id(1)
 		hands.set_guard(false)
 
 func now_f() -> float:
@@ -306,12 +305,12 @@ func parry_end_request() -> void:
 		return   # invalid sender
 	if not multiplayer.is_server():
 		return   # host-authoritative: only the host ends parries
-	# Host-authoritative: host ends parry + despawns barrier.
-	combat.expire_parry(Time.get_ticks_msec() / 1000.0)
+	# Host-authoritative: host ends parry + despawns barrier immediately.
+	combat.end_parry_immediately(Time.get_ticks_msec() / 1000.0)
 	# Notify all clients that parry ended.
 	_net_parry.rpc(sender, false)
 
-@rpc("authority", "call_remote", "unreliable")
+@rpc("any_peer", "call_remote", "unreliable")
 func _net_punch_hitbox(puncher_id: int, is_quick: bool, charge: float) -> void:
 	# All clients: play punch VFX + hands reach on the puncher's instance.
 	var puncher := _player_node(puncher_id)
@@ -322,7 +321,7 @@ func _net_punch_hitbox(puncher_id: int, is_quick: bool, charge: float) -> void:
 	if overlay != null:
 		overlay.notice("JAB" if is_quick else "CHARGED PUNCH")
 
-@rpc("authority", "call_remote", "unreliable")
+@rpc("any_peer", "call_remote", "unreliable")
 func _net_parry(parrier_id: int, active: bool) -> void:
 	# All clients: show parry guard / barrier VFX on the parrier's instance.
 	var parrier := _player_node(parrier_id)

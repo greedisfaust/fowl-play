@@ -116,13 +116,24 @@ func start_parry(now: float) -> void:
 	if overlay != null and overlay.has_method("notice"):
 		overlay.notice("PARRY READY")
 	_spawn_barrier()
-
 func expire_parry(now: float) -> void:
 	if _parry_active_until > 0.0 and now >= _parry_active_until:
 		_parry_active_until = 0.0
 		_parry_cooldown = PARRY_COOLDOWN
 		if overlay != null and overlay.has_method("notice"):
 			overlay.notice("PARRY COOLDOWN")
+		_despawn_barrier()
+
+
+## End parry immediately (client released F early): drop guard, despawn barrier,
+## start cooldown.
+func end_parry_immediately(now: float) -> void:
+	if _parry_active_until <= 0.0:
+		return
+	_parry_active_until = 0.0
+	_parry_cooldown = PARRY_COOLDOWN
+	if overlay != null and overlay.has_method("notice"):
+		overlay.notice("PARRY COOLDOWN")
 	_despawn_barrier()
 
 func is_parrying(now: float) -> bool:
