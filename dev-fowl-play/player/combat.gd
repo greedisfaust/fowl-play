@@ -101,9 +101,12 @@ func spawn_punch_hitbox(is_quick: bool, charge: float) -> Area3D:
 		hb.owner_id = str(owner.name).to_int()
 		hb.push_speed = 0.0 if is_quick else PhysicsTuning.CHARGED_PUNCH_PUSH_SPEED_MPS
 		hb.ragdoll_seconds = 0.0 if is_quick else PhysicsTuning.CHARGED_PUNCH_RAGDOLL_SECONDS
+	# Must be inside the tree before setting global transform.
 	var world: Node = owner.get_tree().get_first_node_in_group("game_world")
 	if world != null:
 		world.add_child(hitbox)
+	hitbox.global_position = eye_pos + look_dir * (range_m * 0.5)
+	hitbox.global_rotation = head_node.global_rotation if head_node != null else owner.global_rotation
 	return hitbox
 
 # --- parry -------------------------------------------------------------

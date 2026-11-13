@@ -35,9 +35,8 @@ func _ready() -> void:
 	visual.mesh = CylinderMesh.new()
 	visual.scale = Vector3.ONE * radius_m
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.2, 0.6, 1.0)
+	mat.albedo_color = Color(0.2, 0.6, 1.0, 0.3)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_alpha = 0.3
 	visual.material_override = mat
 	add_child(visual)
 
