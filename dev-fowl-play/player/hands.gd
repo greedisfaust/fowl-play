@@ -1,5 +1,6 @@
-class_name Hands
 extends Node3D
+
+class_name Hands
 
 # viewmodel (your own hands, parented to the Camera3D)
 const VIEW_REST := [Vector3(-0.45, -0.36, -0.6), Vector3(0.45, -0.36, -0.6)]
@@ -77,6 +78,11 @@ var _last_press := -10.0
 var _sway := Vector2.ZERO
 var _speed := 0.0
 var _bob_t := 0.0
+var _shake_until := 0.0
+var _shake_intensity := 1.0
+var _guard_tween: Tween = null
+var _guard_offset_goal := [Vector3.ZERO, Vector3.ZERO]
+var _guard_offset_cur := [Vector3.ZERO, Vector3.ZERO]
 
 func _ready() -> void:
 	_rest = WORLD_REST if world_mode else VIEW_REST
@@ -269,7 +275,9 @@ func set_color(c: Color) -> void:
 
 # Box both hands in front of the face (parry guard) or relax back to normal.
 # `active` = true pulls both hands up in front of the face, palms forward.
-# Smooth tween in/out so the guard doesn't snap instantly.
+# Sets _guard_offset_goal; _process lerps _guard_offset_cur toward it each frame
+# and adds it to each rig, giving smooth 0.3s in / 0.6s out without fighting
+# _process's bob/sway. Hand rotations tween directly.
 func set_guard(active: bool) -> void:
 	if _rigs.is_empty():
 		return
@@ -278,24 +286,16 @@ func set_guard(active: bool) -> void:
 		_guard_tween = null
 	var tw := create_tween()
 	_guard_tween = tw
-	var duration := 0.18
+	var duration := 0.3 if active else 0.6   # smooth in: 0.3s, relax: 0.6s
 	for i in 2:
-		var hand := _hands[i]
-		var rig := _rigs[i]
 		var side := -1.0 if i == 0 else 1.0
+		var target_q := Quaternion(Vector3.RIGHT, deg_to_rad(-20)) * Quaternion(Vector3.UP, deg_to_rad(side * 15))
 		if active:
-			var target_pos := Vector3(side * 0.12, 0.08, -0.30)
-			var target_q := Quaternion(Vector3.RIGHT, deg_to_rad(-20)) * Quaternion(Vector3.UP, deg_to_rad(side * 15))
-			tw.tween_property(rig, "position", target_pos, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-			tw.parallel().tween_property(hand, "quaternion", target_q, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			_guard_offset_goal[i] = Vector3(side * 0.12, 0.08, -0.30)
 		else:
-			tw.tween_property(rig, "position", _rest[i], duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-			tw.parallel().tween_property(hand, "quaternion", _rest_q[i], duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.finished.connect(func() -> void: _guard_tween = null)
-
-var _shake_until := 0.0
-var _shake_intensity := 1.0
-var _guard_tween: Tween = null
+			_guard_offset_goal[i] = Vector3.ZERO
+		tw.tween_property(_hands[i], "quaternion", target_q, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.finished.connect(func(): _guard_tween = null)
 
 func shake(intensity: float) -> void:
 	_shake_intensity = clampf(intensity, 0.0, 2.0)
@@ -345,6 +345,8 @@ func _process(delta: float) -> void:
 		_update_aim()
 	_aim_cur = _aim_cur.slerp(_aim_goal, 1.0 - exp(-delta * 18.0))
 	_offset_cur = _offset_cur.lerp(_offset_goal, 1.0 - exp(-delta * 14.0))
+	for i in 2:
+		_guard_offset_cur[i] = _guard_offset_cur[i].lerp(_guard_offset_goal[i], 1.0 - exp(-delta * 12.0))
 	if not _busy:
 		_apply_pose(POKE_HAND, _hover_t)
 		_hands[POKE_HAND].quaternion = _rest_q[POKE_HAND].slerp(_aim_cur, _hover_t)
@@ -361,7 +363,7 @@ func _process(delta: float) -> void:
 		var breathe := sin(t * 1.6 + i * 1.7) * 0.004
 		var bob := absf(sin(_bob_t + i * 1.2)) * 0.02 * moving
 		var offset := _offset_cur * _hover_t if i == POKE_HAND else Vector3.ZERO
-		_rigs[i].position = _rest[i] + offset + Vector3(-_sway.x * 0.0008, _sway.y * 0.0008 + breathe - bob, 0.0)
+		_rigs[i].position = _rest[i] + offset + _guard_offset_cur[i] + Vector3(-_sway.x * 0.0008, _sway.y * 0.0008 + breathe - bob, 0.0)
 
 # ---------- poke (also what other players see) ----------
 func reach(world_point: Vector3) -> void:
@@ -390,7 +392,7 @@ func reach(world_point: Vector3) -> void:
 	_tween = tw
 	tw.tween_property(hand, "position", target, t_in).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(hand, "quaternion", aim_q, t_in).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_method(func(v: float) -> void: _apply_pose(i, v), _pose[i], 1.0, t_in)
+	tw.parallel().tween_method(func(v: float): _apply_pose(i, v), _pose[i], 1.0, t_in)
 	if frantic:
 		var wob := 0.5 if randf() < 0.5 else -0.5
 		tw.tween_property(hand, "rotation:z", wob, 0.04).as_relative()
@@ -400,5 +402,5 @@ func reach(world_point: Vector3) -> void:
 	var back := Tween.TRANS_ELASTIC if frantic else Tween.TRANS_QUAD
 	tw.tween_property(hand, "position", Vector3.ZERO, RETURN_TIME).set_trans(back).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(hand, "quaternion", end_q, RETURN_TIME).set_trans(back).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_method(func(v: float) -> void: _apply_pose(i, v), 1.0, end_pose, RETURN_TIME)
-	tw.finished.connect(func() -> void: _busy = false)
+	tw.parallel().tween_method(func(v: float): _apply_pose(i, v), 1.0, end_pose, RETURN_TIME)
+	tw.finished.connect(func(): _busy = false)

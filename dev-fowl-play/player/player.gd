@@ -215,13 +215,20 @@ func _combat_input(event: InputEvent) -> void:
 func _combat_do_light_jab() -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if not combat.can_do_light_jab(now):
+		print("JAB: blocked by spam guard")
 		return   # jab spam guard
 	combat.set_last_press(now)
 	var target := combat.raycast_hit()
+	var target_peer := 0
 	if target != null:
-		var target_peer := target.name.to_int()
+		target_peer = target.name.to_int()
 		if target_peer != 0:
+			print("JAB: sending punch_request to peer %d" % target_peer)
 			punch_request.rpc_id(1, target_peer, 0.0)
+		else:
+			print("JAB: hit non-player %s" % target.name)
+	else:
+		print("JAB: no target in raycast")
 	_net_jab.rpc()
 	if hands != null:
 		var p := ray.get_collision_point() if ray.is_colliding() else Vector3.ZERO
@@ -233,7 +240,12 @@ func _combat_throw_charged_punch(charge: float) -> void:
 		var target_peer := target.name.to_int()
 		if target_peer != 0:
 			var is_charged := charge >= 1.0
+			print("CHARGED PUNCH: sending punch_request to peer %d charge=%.2f" % [target_peer, charge])
 			punch_request.rpc_id(1, target_peer, charge)
+		else:
+			print("CHARGED PUNCH: hit non-player %s" % target.name)
+	else:
+		print("CHARGED PUNCH: no target in raycast")
 	if charge >= 1.0:
 		combat.start_lunge(-(camera.global_basis.z), LUNGE_SPEED, 0.5)
 	_net_punch.rpc(charge)
@@ -276,8 +288,8 @@ func charge_meter() -> float:
 @rpc("any_peer", "call_local", "reliable")
 func punch_request(target_id: int, charge: float) -> void:
 	var sender := multiplayer.get_remote_sender_id()
-	if sender != -1 and sender != 1:
-		return   # only the host (peer 1) or local call may process punch requests
+	if sender < -1:
+		return   # invalid sender (should never happen)
 	var puncher := _player_node(sender)
 	var target := _player_node(target_id)
 	if puncher == null or target == null:
@@ -336,7 +348,6 @@ func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
 		# Jab: jiggle only, no limp state (quick punch shouldn't ragdoll).
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		var attacker := _player_node(int(attacker_id))
 		if attacker != null:
 			var dir: Vector3 = (global_position - attacker.global_position).normalized()
@@ -584,7 +595,7 @@ func _physics_process(delta: float) -> void:
 	if combat.is_lunging(now):
 		# Camera-arced lunge: steer toward where the player is looking while lunging,
 		# so they can arc left/right by looking that direction during the lunge.
-		combat.steer_lunge(-(camera.global_basis.z), 0.0, 3.0)
+		combat.steer_lunge(-(camera.global_basis.z), 1.0, 10.0, delta)
 		velocity.x = combat.lunge_velocity().x
 		velocity.z = combat.lunge_velocity().z
 	elif not (input_locked or state.is_input_locked()) and now >= (state.limp_timer if state.limp_timer > 0.0 else 0.0):

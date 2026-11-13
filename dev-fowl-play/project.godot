@@ -21,6 +21,7 @@ GameState="*uid://c8brc80v1tqsb"
 Style="*uid://c3cvhwdqkcx4n"
 Network="*uid://c2ricdq5268n0"
 CarryRegistry="*uid://dadtasgo2uskq"
+PhysicsTuning="res://scripts/physics_tuning.gd"
 
 [display]
 

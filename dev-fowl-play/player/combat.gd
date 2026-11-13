@@ -151,15 +151,18 @@ func lunge_velocity() -> Vector3:
 ## `strength` is how hard to pull toward that direction (0..1).
 ## `max_turn_rad_per_sec` limits how fast the aim can swing so players can't
 ## instantly look behind mid-lunge.
-func steer_lunge(look_dir: Vector3, strength: float, max_turn_rad_per_sec: float = 3.0) -> void:
+## `delta` is seconds since the last physics frame (passed from _physics_process).
+func steer_lunge(look_dir: Vector3, strength: float, max_turn_rad_per_sec: float = 6.0, delta: float = 0.016) -> void:
 	if not is_lunging(Time.get_ticks_msec() / 1000.0):
+		return
+	if strength <= 0.0:
 		return
 	var target := look_dir.normalized()
 	var current := _lunge_velocity.normalized()
 	if current == Vector3.ZERO:
 		current = target
 	# Cap the turn rate so the arc can't snap around instantly.
-	var max_delta := max_turn_rad_per_sec * PhysicsTuning.get_snapshot_interval_seconds()
+	var max_delta := max_turn_rad_per_sec * delta * strength
 	var angle := current.angle_to(target)
 	if absf(angle) < 0.001:
 		return

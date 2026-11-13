@@ -1,4 +1,4 @@
-class_name PhysicsTuning
+class_name PhysicsTuning extends Node
 
 ## Single tuning source for all physics/input numbers.
 ## Every constant lives here, with units in the name. One job per file.
