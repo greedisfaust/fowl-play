@@ -144,6 +144,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	_parry_input(event)
 	if event.is_action_pressed("use") and not carrier.is_carrying():
 		_try_interact()
+	# Left click presses a device (USE only — never grabs a carryable).
+	# BC-1: left click presses a device when idle.
+	if event.is_action_pressed("primary") and not carrier.is_carrying():
+		if ray.is_colliding():
+			var target = ray.get_collider()
+			var interactable := Interactable.find(target)
+			while target != null and interactable == null:
+				target = target.get_parent()
+				if target != null:
+					interactable = Interactable.find(target)
+			if target != null and interactable != null and interactable.kind == Interactable.Kind.USE:
+				if interactable.can_interact(self):
+					interactable.interact(self)
+					get_viewport().set_input_as_handled()
 
 # --- carry input: DROP (tap Q) / THROW (hold Q); GRAB is via E (_try_interact) ----
 
