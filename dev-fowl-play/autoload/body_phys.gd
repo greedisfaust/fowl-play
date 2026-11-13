@@ -132,10 +132,13 @@ func _physics_process(delta: float) -> void:
 		# Follow the carrier anchor with a spring (weight + slight swing).
 		# Use the Head's basis (yaw + pitch) so the carried object follows
 		# where the carrier is looking, not just their body yaw.
+		var anchor_pos: Vector3 = carry_anchor.global_position
 		var anchor_basis: Basis = carry_anchor.global_basis
 		if carry_anchor.has_node("Head"):
-			anchor_basis = (carry_anchor.get_node("Head") as Node3D).global_basis
-		var target: Vector3 = carry_anchor.global_position + anchor_basis * carry_offset
+			var head: Node3D = carry_anchor.get_node("Head") as Node3D
+			anchor_pos = head.global_position
+			anchor_basis = head.global_basis
+		var target: Vector3 = anchor_pos + anchor_basis * carry_offset
 		# Raycast from anchor to target: stop at walls so carried bodies don't clip.
 		var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(carry_anchor.global_position, target)
 		query.exclude = [carry_anchor.get_rid(), get_rid()]
