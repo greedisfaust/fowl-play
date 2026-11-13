@@ -313,6 +313,51 @@ func _on_peer_disconnected(id: int) -> void:
 			on_held_disconnect(held)
 			break
 
+# --- late-join prop state sync --------------------------------------------
+
+## Send every prop's current transform + carry holder to a joining peer so the
+## new client renders props at their real positions (not their scene home
+## positions) and can interact with them immediately. Host only; called from
+## Network._on_peer_connected.
+func _send_prop_state_to_peer(peer_id: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var states: Array = []
+	for prop in get_tree().get_nodes_in_group("physics_props"):
+		var t: Transform3D = prop.global_transform
+		var hid: Variant = held_by.get(prop, 0)
+		states.append([prop.name, t, hid])
+	_prop_state_sync.rpc_id(peer_id, states)
+
+## Client receives current prop state from the host when joining. Applied only
+## to props matched by name (names replicate; instance ids do not).
+@rpc("any_peer", "call_remote", "reliable")
+func _prop_state_sync(states: Array) -> void:
+	var sender: int = multiplayer.get_remote_sender_id()
+	if sender != 0 and sender != 1:
+		return   # only the host may sync prop state
+	for entry in states:
+		if entry.size() < 3:
+			continue
+		var name: String = String(entry[0])
+		var t: Transform3D = Transform3D(entry[1])
+		var prop: Node = _prop_by_name(name)
+		if prop == null:
+			continue
+		prop.global_transform = t
+		# Seed the interpolation source so observer clients don't drift toward
+		# (0,0,0) before the first host snapshot arrives.
+		var bp: Node = _body_phys_of(prop as Node3D)
+		if bp != null:
+			bp.last_synced_transform = t
+
+## Look up a prop in the physics_props group by its (replicated) name.
+func _prop_by_name(name: String) -> Node:
+	for prop in get_tree().get_nodes_in_group("physics_props"):
+		if str(prop.name) == str(name):
+			return prop
+	return null
+
 # --- private helpers -----------------------------------------------------
 
 func _held_id(held: Node) -> Variant:

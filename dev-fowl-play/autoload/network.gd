@@ -110,6 +110,9 @@ func _on_peer_connected(id: int) -> void:
 	players[id] = _free_slot()
 	colors[id] = _free_color()
 	_sync_roster.rpc(players, names, colors)
+	# Sync current prop state (transform + carry holder) so the joining peer
+	# sees props where they actually are, not at their scene home positions.
+	CarryRegistry._send_prop_state_to_peer(id)
 
 func _on_peer_disconnected(id: int) -> void:
 	if not multiplayer.is_server():

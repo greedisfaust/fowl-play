@@ -105,6 +105,18 @@ Exit code 0 = pass. Headless output is buffered until exit; redirect to a file i
 
 ---
 
+## Late-join prop sync
+
+When a new client joins mid-run, props already moved by the host (or another client) still render at their scene home positions on the joining client, so the new client can't interact with them until the host grabs them.
+
+`carry_registry.gd` gains `_send_prop_state_to_peer(peer_id)` — host-only, iterates the `physics_props` group and sends each prop's `name` + `global_transform` + carry `holder_id` to that one peer via `_prop_state_sync.rpc_id`. The client matches props by name (names replicate; instance ids don't) and sets `global_transform` plus `BodyPhys.last_synced_transform` so interpolation starts from the real position.
+
+`network.gd` calls `CarryRegistry._send_prop_state_to_peer(id)` at the end of `_on_peer_connected(id)` (host side).
+
+**Success:** a joining client sees every prop at its current position and can pick it up / push it immediately; carried props also sync their holder so the carry relationship is visible from the first frame.
+
+---
+
 ## Multiplayer playtest (every slice ends with one)
 
 Two Godot instances on the same machine:
