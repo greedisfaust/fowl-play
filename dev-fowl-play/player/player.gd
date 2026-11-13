@@ -156,8 +156,9 @@ func _unhandled_input(event: InputEvent) -> void:
 					interactable = Interactable.find(target)
 			if target != null and interactable != null and interactable.kind == Interactable.Kind.USE:
 				if interactable.can_interact(self):
+					var p := ray.get_collision_point()
+					hands.reach(p)
 					interactable.interact(self)
-					get_viewport().set_input_as_handled()
 
 # --- carry input: DROP (tap Q) / THROW (hold Q); GRAB is via E (_try_interact) ----
 
