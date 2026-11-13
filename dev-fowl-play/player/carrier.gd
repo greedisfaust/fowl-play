@@ -29,11 +29,23 @@ func _on_hold_begin(holder_id: int, held_id: Variant) -> void:
 	var node: Node = CarryRegistry.node_for_held(held_id)
 	if node != null:
 		carried = node
+		# Client-side prediction: lock the held body to our head every frame
+		# so the carrier feels zero lag while holding.
+		var bp: Node = node.get_node_or_null("BodyPhys")
+		if bp != null and bp.has_method("set_carry_mode"):
+			var offset: Vector3 = node.call("get_carry_offset") if node.has_method("get_carry_offset") else Vector3.ZERO
+			bp.call("set_carry_mode", _owner as Node3D, offset)
 
 func _on_hold_end(holder_id: int, held_id: Variant, threw: bool) -> void:
 	if holder_id != _owner_peer_id():
 		return
 	carried = null
+	# Client-side prediction: release the local carry-mode lock.
+	var node: Node = CarryRegistry.node_for_held(held_id)
+	if node != null:
+		var bp: Node = node.get_node_or_null("BodyPhys")
+		if bp != null and bp.has_method("clear_carry_mode"):
+			bp.call("clear_carry_mode")
 
 const CHARGE_MS := int(1000.0 * PhysicsTuning.THROW_FULL_CHARGE_SECONDS)  # full-throw charge time (client UI)
 
@@ -94,7 +106,10 @@ func request_pickup(target: Variant) -> void:
 	var holder_id := _owner_peer_id()
 	if holder_id == 0:
 		holder_id = 1
-	CarryRegistry.hold_request_pickup.rpc_id(1, holder_id, held_id)
+	if holder_id == 1:
+		CarryRegistry.hold_request_pickup(holder_id, held_id)   # local call when we're the host
+	else:
+		CarryRegistry.hold_request_pickup.rpc_id(1, holder_id, held_id)
 
 # Ask the host to drop what we carry. threw=false for plain drop.
 func request_drop(threw: bool = false) -> void:
@@ -103,7 +118,10 @@ func request_drop(threw: bool = false) -> void:
 	var holder_id := _owner_peer_id()
 	if holder_id == 0:
 		holder_id = 1
-	CarryRegistry.hold_request_drop.rpc_id(1, holder_id, threw)
+	if holder_id == 1:
+		CarryRegistry.hold_request_drop(holder_id, threw)   # local call when we're the host
+	else:
+		CarryRegistry.hold_request_drop.rpc_id(1, holder_id, threw)
 
 # Ask the host to throw with client-supplied aim direction + charge.
 func request_throw(direction: Vector3, charge: float) -> void:
@@ -112,7 +130,10 @@ func request_throw(direction: Vector3, charge: float) -> void:
 	var holder_id := _owner_peer_id()
 	if holder_id == 0:
 		holder_id = 1
-	CarryRegistry.hold_request_throw.rpc_id(1, holder_id, direction, charge)
+	if holder_id == 1:
+		CarryRegistry.hold_request_throw(holder_id, direction, charge)   # local call when we're the host
+	else:
+		CarryRegistry.hold_request_throw.rpc_id(1, holder_id, direction, charge)
 
 # --- private helpers --------------------------------------------------------
 

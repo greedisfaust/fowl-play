@@ -1,4 +1,4 @@
-extends RigidBody3D
+﻿extends RigidBody3D
 
 class_name BodyPhys
 
@@ -12,7 +12,7 @@ class_name BodyPhys
 ## Authority model (host-authoritative):
 ##   - Host (peer 1) simulates the body: freeze = false, is_authority = true.
 ##   - Clients freeze the body and interpolate changed-only snapshots.
-##   - A limp player is always host-simulated — the owner's authority is
+##   - A limp player is always host-simulated â€” the owner's authority is
 ##     suspended while limp, so a client can never fabricate a launch.
 ##
 ## Replication: host sends _sync_snapshot only when the transform changes,
@@ -129,9 +129,10 @@ func _physics_process(delta: float) -> void:
 		freeze = true
 
 	if carry_mode and carry_anchor != null:
-		# Follow the carrier anchor with a spring (weight + slight swing).
-		# Use the Head's basis (yaw + pitch) so the carried object follows
-		# where the carrier is looking, not just their body yaw.
+		# Lock the carried body to the carrier's head (hand position relative
+		# to where they're looking). No spring lag - glued to the hand.
+		# The carrier client locks locally for zero lag; observers interpolate
+		# from host snapshots below.
 		var anchor_pos: Vector3 = carry_anchor.global_position
 		var anchor_basis: Basis = carry_anchor.global_basis
 		if carry_anchor.has_node("Head"):
@@ -139,18 +140,21 @@ func _physics_process(delta: float) -> void:
 			anchor_pos = head.global_position
 			anchor_basis = head.global_basis
 		var target: Vector3 = anchor_pos + anchor_basis * carry_offset
+		# Carrier client: lock locally (this peer is holding it).
+		if not multiplayer.is_server() and carry_anchor.is_multiplayer_authority():
+			global_position = target
+			return
 		# Raycast from anchor to target: stop at walls so carried bodies don't clip.
 		var query: PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.create(carry_anchor.global_position, target)
 		query.exclude = [carry_anchor.get_rid(), get_rid()]
 		var hit: Dictionary = get_viewport().get_world_3d().direct_space_state.intersect_ray(query)
 		if not hit.is_empty():
 			target = hit.position + hit.normal * 0.25
-		# Lock the carried body to the anchor position (no spring lag) so it
-		# feels glued to the hand/camera. Wall raycast still prevents clipping.
-		global_position = target
-		if limp_mode:
-			global_basis = carry_anchor.global_basis
-		# Host: send carried-body snapshots every frame so clients see smooth carried motion.
+		# Observer clients: interpolate toward target every frame (smooth, not frozen).
+		if not multiplayer.is_server():
+			global_position = global_position.lerp(target, minf(delta * 40.0, 1.0))
+			return
+		# Host: simulate + send snapshots every frame.
 		if multiplayer.is_server():
 			_sync_snapshot.rpc(global_transform, linear_velocity, angular_velocity)
 		return
@@ -200,3 +204,4 @@ func _sync_snapshot(transform: Transform3D, linear_velocity: Vector3, angular_ve
 	last_synced_linear_velocity = linear_velocity
 	last_synced_angular_velocity = angular_velocity
 	snap_timer = 0.0   # restart interpolation on new snapshot
+
