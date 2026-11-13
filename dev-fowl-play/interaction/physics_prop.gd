@@ -100,10 +100,10 @@ func get_throw_speed(charge: float) -> float:
 func interact(player: Node) -> void:
 	if not can_pick_up:
 		# Non-pickupable: shove away (host-authoritative push).
-		request_push.rpc_id(1, _sender_id())
+		request_push.rpc_id(1, _holder_peer_id(player))
 		return
 	# Carryable: request pickup via the registry.
-	var who := _sender_id()
+	var who := _holder_peer_id(player)
 	if multiplayer.is_server():
 		CarryRegistry.hold_request_pickup(who, name)   # local call when we're the host
 	else:
