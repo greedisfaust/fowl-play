@@ -31,7 +31,9 @@ func _on_hold_begin(holder_id: int, held_id: Variant) -> void:
 		carried = node
 		# Client-side prediction: lock the held body to our head every frame
 		# so the carrier feels zero lag while holding.
-		var bp: Node = node.get_node_or_null("BodyPhys")
+		var bp: Node = node
+		if not bp.has_method("set_carry_mode"):
+			bp = node.get_node_or_null("BodyPhys")
 		if bp != null and bp.has_method("set_carry_mode"):
 			var offset: Vector3 = node.call("get_carry_offset") if node.has_method("get_carry_offset") else Vector3.ZERO
 			bp.call("set_carry_mode", _owner as Node3D, offset)
@@ -43,7 +45,9 @@ func _on_hold_end(holder_id: int, held_id: Variant, threw: bool) -> void:
 	# Client-side prediction: release the local carry-mode lock.
 	var node: Node = CarryRegistry.node_for_held(held_id)
 	if node != null:
-		var bp: Node = node.get_node_or_null("BodyPhys")
+		var bp: Node = node
+		if not bp.has_method("clear_carry_mode"):
+			bp = node.get_node_or_null("BodyPhys")
 		if bp != null and bp.has_method("clear_carry_mode"):
 			bp.call("clear_carry_mode")
 
