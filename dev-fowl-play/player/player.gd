@@ -92,7 +92,7 @@ func _ready() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		base_cam_rot = camera.rotation   # camera shake resets to this each frame (bug #13)
 	# Wire up components.
-	combat.setup(self, head, ray, hands, overlay, state, carrier)
+	combat.setup(self, head, hands, overlay, state, carrier)
 	carrier._owner = self
 	carrier.bind_registry()
 	# Limp recovery: when BodyPhys limp timer expires, return to IDLE.
@@ -148,6 +148,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Left click presses a device (USE only — never grabs a carryable).
 	# BC-1: left click presses a device when idle.
 	if event.is_action_pressed("primary") and not carrier.is_carrying():
+		ray.force_raycast_update()
 		if ray.is_colliding():
 			var target = ray.get_collider()
 			var interactable := Interactable.find(target)
@@ -218,40 +219,20 @@ func _combat_do_light_jab() -> void:
 		print("JAB: blocked by spam guard")
 		return   # jab spam guard
 	combat.set_last_press(now)
-	var target := combat.raycast_hit()
-	var target_peer := 0
-	if target != null:
-		target_peer = target.name.to_int()
-		if target_peer != 0:
-			print("JAB: sending punch_request to peer %d" % target_peer)
-			punch_request.rpc_id(1, target_peer, 0.0)
-		else:
-			print("JAB: hit non-player %s" % target.name)
-	else:
-		print("JAB: no target in raycast")
-	_net_jab.rpc()
+	# Host-authoritative: tell the host to spawn the quick-punch hitbox.
+	punch_request.rpc_id(1, true, 0.0)
 	if hands != null:
-		var p := ray.get_collision_point() if ray.is_colliding() else Vector3.ZERO
-		hands.reach(p)
+		hands.reach(Vector3.ZERO)
 
 func _combat_throw_charged_punch(charge: float) -> void:
-	var target := combat.raycast_hit()
-	if target != null:
-		var target_peer := target.name.to_int()
-		if target_peer != 0:
-			var is_charged := charge >= 1.0
-			print("CHARGED PUNCH: sending punch_request to peer %d charge=%.2f" % [target_peer, charge])
-			punch_request.rpc_id(1, target_peer, charge)
-		else:
-			print("CHARGED PUNCH: hit non-player %s" % target.name)
-	else:
-		print("CHARGED PUNCH: no target in raycast")
+	# Host-authoritative: tell the host to spawn the charged-punch hitbox.
+	var is_charged := charge >= 1.0
+	print("CHARGED PUNCH: sending punch_request to host charge=%.2f" % charge)
+	punch_request.rpc_id(1, false, charge)
 	if charge >= 1.0:
 		combat.start_lunge(-(camera.global_basis.z), LUNGE_SPEED, 0.5)
-	_net_punch.rpc(charge)
 	if hands != null:
-		var p := ray.get_collision_point() if ray.is_colliding() else Vector3.ZERO
-		hands.reach(p)
+		hands.reach(Vector3.ZERO)
 
 func _parry_input(event: InputEvent) -> void:
 	if state.is_limp() or state.is_carrying():
@@ -259,9 +240,12 @@ func _parry_input(event: InputEvent) -> void:
 	if event.is_action_pressed("parry"):
 		var now := Time.get_ticks_msec() / 1000.0
 		if combat.can_start_parry(now):
-			combat.start_parry(now)
-			hands.set_guard(true)
+			# Host-authoritative: tell the host to start parry + spawn barrier.
+			parry_request.rpc_id(1)
 	if event.is_action_released("parry"):
+		# Host will despawn barrier when parry grace expires.
+		# Tell all clients the parry ended (guard drops, barrier gone).
+		parry_request.rpc_id(1)   # reuse: host will call expire_parry logic
 		hands.set_guard(false)
 
 func now_f() -> float:
@@ -286,97 +270,74 @@ func charge_meter() -> float:
 # --- host-authoritative punch ----------------------------------------------
 
 @rpc("any_peer", "call_local", "reliable")
-func punch_request(target_id: int, charge: float) -> void:
+func punch_request(is_quick: bool, charge: float) -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if sender < -1:
 		return   # invalid sender (should never happen)
+	if not multiplayer.is_server():
+		return   # host-authoritative: only the host spawns hitboxes
 	var puncher := _player_node(sender)
-	var target := _player_node(target_id)
-	if puncher == null or target == null:
+	if puncher == null:
 		return
-	var result := combat.validate_punch(puncher, target, charge)
-	var valid := bool(result[0])
-	var is_charged := bool(result[1])
-	if not valid:
-		return
-	# Host applies limp physics directly to the target's BodyPhys (host authority
-	# over all bodies). take_punch then runs on the target client for state
-	# machine + visuals only (apply_launch is a no-op there since is_authority
-	# is false on clients).
-	var target_bp := target.get_node_or_null("BodyPhys")
-	if target_bp is BodyPhys:
-		if is_charged:
-			target_bp.set_limp_mode(PhysicsTuning.LIMP_SECONDS)
-			target_bp.apply_launch((target.global_position - puncher.global_position).normalized(), PhysicsTuning.LUNGE_SPEED_MPS)
-		else:
-			target_bp.set_limp_mode(0.35)
-	take_punch.rpc_id(target_id, sender, charge, is_charged)
+	# Host-authoritative: host spawns the punch hitbox. The hitbox's body_entered
+	# applies effects directly (jiggle for quick, ragdoll + push for charged).
+	combat.spawn_punch_hitbox(is_quick, charge)
+	# Notify all clients for visuals (hands reach, VFX on the puncher's node).
+	_net_punch_hitbox.rpc(sender, is_quick, charge)
 
 @rpc("any_peer", "call_local", "reliable")
-func take_punch(attacker_id: int, _charge: float, is_charged: bool) -> void:
+func parry_request() -> void:
 	var sender := multiplayer.get_remote_sender_id()
-	if sender != 0 and sender != 1:
-		return
+	if sender < -1:
+		return   # invalid sender
+	if not multiplayer.is_server():
+		return   # host-authoritative: only the host starts parries
+	# Host-authoritative: host starts parry + spawns barrier.
+	combat.start_parry(Time.get_ticks_msec() / 1000.0)
+	# Notify all clients for visuals (hands guard, barrier VFX).
+	_net_parry.rpc(sender, true)
+	# Host client also gets the VFX.
+	_net_parry(sender, true)
 
-	# If the target is parrying, the attacker gets ragdolled back instead.
-	if combat.is_parrying(now_f()):
-		combat.expire_parry(now_f())
-		var attacker := _player_node(int(attacker_id))
-		if attacker != null:
-			var attacker_hands := attacker.get_node_or_null("Hands")
-			if attacker_hands != null:
-				attacker_hands.set_guard(false)
-		var direction: Vector3 = (attacker.global_position - global_position).normalized()
-		if direction == Vector3.ZERO:
-			direction = -get_node("Head").global_basis.z
-		# Parry success: attacker is knocked down instead (host applies physics via riposte).
-		parry_riposte.rpc_id(1, attacker_id)
-		show_notice("PARRIED!")
-		return
+@rpc("any_peer", "call_local", "reliable")
+func parry_end_request() -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if sender < -1:
+		return   # invalid sender
+	if not multiplayer.is_server():
+		return   # host-authoritative: only the host ends parries
+	# Host-authoritative: host ends parry + despawns barrier.
+	combat.expire_parry(Time.get_ticks_msec() / 1000.0)
+	# Notify all clients that parry ended.
+	_net_parry.rpc(sender, false)
 
-	if is_charged:
-		state.transition_to(PlayerState.State.LIMP)
-		state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
-		state.start_limp_timer(PhysicsTuning.LIMP_SECONDS)
-		if GameState.phase == GameState.Phase.DAY:
-			var pct := 5
-			var new_wallet := maxi(0, GameState.wallet - (GameState.wallet * pct / 100.0))
-			GameState._set_wallet.rpc(new_wallet)
-			show_notice("SHAKEDOWN - %d%%" % pct)
-		else:
-			show_notice("KNOCKED DOWN")
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+@rpc("authority", "call_remote", "unreliable")
+func _net_punch_hitbox(puncher_id: int, is_quick: bool, charge: float) -> void:
+	# All clients: play punch VFX + hands reach on the puncher's instance.
+	var puncher := _player_node(puncher_id)
+	if puncher != null and puncher.has_node("Hands"):
+		var h: Hands = puncher.get_node("Hands") as Hands
+		if h != null:
+			h.reach(Vector3.ZERO)
+	if overlay != null:
+		overlay.notice("JAB" if is_quick else "CHARGED PUNCH")
+
+@rpc("authority", "call_remote", "unreliable")
+func _net_parry(parrier_id: int, active: bool) -> void:
+	# All clients: show parry guard / barrier VFX on the parrier's instance.
+	var parrier := _player_node(parrier_id)
+	if parrier != null and parrier.has_node("Hands"):
+		var h: Hands = parrier.get_node("Hands") as Hands
+		if h != null:
+			h.set_guard(active)
+	# Mirror parry state so is_parrying() works client-side (movement lock).
+	var now := Time.get_ticks_msec() / 1000.0
+	if active:
+		combat.set_parry_state(now + PhysicsTuning.PARRY_GRACE_SECONDS, now + PhysicsTuning.PARRY_COOLDOWN_SECONDS)
 	else:
-		# Jab: jiggle only, no limp state (quick punch shouldn't ragdoll).
-		var attacker := _player_node(int(attacker_id))
-		if attacker != null:
-			var dir: Vector3 = (global_position - attacker.global_position).normalized()
-			_jiggle_velocity = dir * 2.0
-		show_notice("JAB")
-
-# Host applies limp physics to the attacker after a successful parry (knockdown).
-@rpc("any_peer", "call_local", "reliable")
-func parry_riposte(attacker_id: int) -> void:
-	var sender := multiplayer.get_remote_sender_id()
-	if sender != 0 and sender != 1:
-		return   # only the host may process punches
-	var attacker := _player_node(attacker_id)
-	if attacker == null:
-		return
-	var attacker_bp := attacker.get_node_or_null("BodyPhys")
-	if attacker_bp is BodyPhys:
-		var dir: Vector3 = (attacker.global_position - global_position).normalized()
-		if dir == Vector3.ZERO:
-			dir = -get_node("Head").global_basis.z
-		attacker_bp.set_limp_mode(PhysicsTuning.LIMP_SECONDS)
-		attacker_bp.apply_launch(dir, 10.0)
-	var attacker_state = attacker.get("state")
-	if attacker_state != null:
-		attacker_state.transition_to(PlayerState.State.LIMP)
-		attacker_state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
-		attacker_state.start_limp_timer(PhysicsTuning.LIMP_SECONDS)
-	# No take_punch call here: parry_riposte already applied limp physics +
-	# state directly on the host. The attacker client recovers via limp_recovered.
+		combat.set_parry_state(0.0, now + PhysicsTuning.PARRY_COOLDOWN_SECONDS)
+	if overlay != null:
+		overlay.notice("PARRY READY" if active else "PARRY COOLDOWN")
 
 # Apply limp to this player (called by Combat on the host).
 func apply_ragdoll(direction: Vector3, speed: float, seconds: float) -> void:
@@ -444,6 +405,7 @@ func _try_interact() -> void:
 		return   # can't interact while carrying something
 	if state.is_limp():
 		return   # limp players can't interact
+	ray.force_raycast_update()
 	if not ray.is_colliding():
 		return
 	var target = ray.get_collider()
@@ -466,14 +428,6 @@ func _try_interact() -> void:
 func _player_node(id: int) -> Node:
 	var world := get_tree().get_first_node_in_group("game_world")
 	return world.get_node_or_null("Players/" + str(id)) if world != null else null
-
-@rpc("authority", "call_remote", "unreliable")
-func _net_jab() -> void:
-	hands.reach(ray.get_collision_point())
-
-@rpc("authority", "call_remote", "unreliable")
-func _net_punch(_charge: float) -> void:
-	hands.reach(ray.get_collision_point())
 
 # --- limp-player Carryable interface (when THIS player is carried) ----------
 
@@ -598,7 +552,7 @@ func _physics_process(delta: float) -> void:
 		combat.steer_lunge(-(camera.global_basis.z), 1.0, 10.0, delta)
 		velocity.x = combat.lunge_velocity().x
 		velocity.z = combat.lunge_velocity().z
-	elif not (input_locked or state.is_input_locked()) and now >= (state.limp_timer if state.limp_timer > 0.0 else 0.0):
+	elif not (input_locked or state.is_input_locked() or combat.is_parrying(now)) and now >= (state.limp_timer if state.limp_timer > 0.0 else 0.0):
 		var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
 		velocity.x = direction.x * SPEED
