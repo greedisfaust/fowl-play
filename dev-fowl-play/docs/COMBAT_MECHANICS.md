@@ -11,7 +11,7 @@ Describes the intended feel and rules for Q punch, F parry, and limp state. Use 
 | Press | Q pressed down | `combat.set_punch_charge_held(true, now)` starts the charge timer |
 | Hold | Q held | Timer accumulates in `_punch_input_active` |
 | Auto-fire | Q held ≥ `PhysicsTuning.CHARGED_PUNCH_HOLD_SECONDS` (1.0s) | Charged punch fires automatically while still holding Q. `_punch_charge_auto_fired` set so it only fires once per press. |
-| Release | Q let go before 1s | If held ≥ 150ms: charged punch with charge = held_ms / 1000ms (clamped 0..1). If held < 150ms: light jab. |
+| Release | Q let go before 1s | If held ≥ 150ms: charged punch with charge = held_ms / 1000ms (clamped 0..1). If held < 150ms: light jab (jiggle only, **no limp state** — quick punch shouldn't ragdoll). |
 
 **Why**: The user wants the charged punch to trigger at exactly 1 second of hold, not just on release. Auto-fire happens in `player.gd:_process()` every frame while `_punch_input_active` is true and `_punch_charge_auto_fired` is false.
 
@@ -25,7 +25,7 @@ Describes the intended feel and rules for Q punch, F parry, and limp state. Use 
 
 **Preserved through flight**: `player.gd:_physics_process()` checks `combat.is_lunging(now)` and, while true, sets `velocity.x/z` from `combat.lunge_velocity()` instead of reading move input. After `_lunge_until` expires, normal movement input resumes.
 
-**Camera arc (steer)**: while lunging, `combat.steer_lunge(-(camera.global_basis.z), 0.3)` pulls the lunge velocity 30% toward wherever the camera is looking each physics frame. This lets the player arc the punch left/right mid-lunge by looking that way — the movement still goes forward, but the aim direction bends toward camera look.
+**Camera arc (steer)**: while lunging, `combat.steer_lunge(-(camera.global_basis.z), 0.0, 3.0)` pulls the lunge velocity toward wherever the camera is looking, capped at `max_turn_rad_per_sec = 3.0` rad/s. This lets the player arc the punch left/right mid-lunge by looking that way, but the turn rate is limited so a quick flick can't instantly aim behind. The movement still goes forward; the aim direction bends gradually toward camera look.
 
 **Range**: `PUNCH_RANGE_M = 3.0` — `combat.validate_punch()` rejects targets farther than 3m.
 
@@ -35,20 +35,20 @@ Describes the intended feel and rules for Q punch, F parry, and limp state. Use 
 
 | Phase | Trigger | What happens |
 |---|---|---|
-| Press | F pressed | `combat.start_parry(now)` sets `_parry_active_until = now + PARRY_GRACE_SECONDS` (1.5s). `hands.set_guard(true)` puts both hands in boxer-guard pose in front of the face. |
-| Hold | F held | Guard stays active until `_parry_active_until` expires |
-| Release | F let go | `hands.set_guard(false)` returns hands to rest |
+| Press | F pressed | `combat.start_parry(now)` sets `_parry_active_until = now + PARRY_GRACE_SECONDS` (1.5s). `hands.set_guard(true)` tweens both hands smoothly (0.18s) into boxer-guard pose in front of the face. |
+| Hold | F held | Guard stays active until `_parry_active_until` expires or F is released |
+| Release | F let go | `hands.set_guard(false)` tweens both hands smoothly (0.18s) back to rest pose |
+
+**Guard state cooldown**: after `_parry_active_until` expires, `_parry_cooldown = PARRY_COOLDOWN_SECONDS` (1.5s) before F can parry again. The guard stays up while F is held; releasing F relaxes the hands back to rest.
 
 **Can't parry while**: limp, carrying, or during cooldown (`combat.can_start_parry(now)` checks `_parry_cooldown <= 0.0 and now >= _parry_active_until`).
-
-**Cooldown**: `PARRY_COOLDOWN_SECONDS = 1.5` after grace expires.
 
 **Parry success**: if target is parrying when a punch lands:
 1. `combat.expire_parry(now)` — ends grace, starts cooldown
 2. `parry_riposte.rpc_id(1, attacker_id)` — host knocks the attacker down (limp + launch)
 3. Target shows "PARRIED!" notice
 
-**Parry visual**: `hands.set_guard(true)` pulls both hands up in front of the face, palms forward (defined in `hands.gd:set_guard`). This is the boxer-guard indication — no separate text needed.
+**Parry visual**: `hands.set_guard()` now tweens both hands smoothly in/out instead of snapping. It kills any in-flight guard tween when state changes, so rapid press/release won't glitch. Both hands move together to front-of-face pose (palms forward) and relax back together — no left-hand-only glitch.
 
 ## 4. Limp (knockdown / carried / thrown)
 
@@ -73,7 +73,7 @@ Host (punch_request) → validate_punch(reach/state) → if valid:
 Target client (take_punch) → state machine + visuals only (limp, jiggle, notice)
 ```
 
-**Validation**: `punch_request` rejects any sender that isn't a valid peer (`sender == -1`). `take_punch` and `parry_riposte` reject any sender that isn't host (peer 1) or server.
+**Validation**: `punch_request` accepts sender -1 (host local call) or peer 1 (host); rejects everything else. `take_punch` and `parry_riposte` reject any sender that isn't host (peer 1) or server.
 
 ## 6. Files
 
@@ -86,10 +86,10 @@ Target client (take_punch) → state machine + visuals only (limp, jiggle, notic
 
 ## 7. Playtest checklist
 
-- [ ] Tap Q (fast release <150ms) → jab, target jiggles, brief limp 0.35s
+- [ ] Tap Q (fast release <150ms) → jab, target jiggles, no limp, recovers instantly
 - [ ] Hold Q ≥ 1s → charged punch auto-fires while still holding
 - [ ] Hold Q, look left/right during lunge → punch arcs toward camera look
 - [ ] Hold F → hands come up in boxer guard, "PARRY READY" notice
 - [ ] F parry + get punched → attacker knocked down instead, "PARRIED!" notice
 - [ ] Charged punch hit → target goes limp for 2.5s, head slumps, frozen input
-- [ ] Jab hit → target jiggles, 0.35s limp, recovers
+- [ ] Jab hit → target jiggles, brief input unlock, recovers instantly
