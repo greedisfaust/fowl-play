@@ -146,6 +146,22 @@ func is_lunging(now: float) -> bool:
 func lunge_velocity() -> Vector3:
 	return _lunge_velocity
 
+## Steer the lunge toward a look direction mid-flight (camera-arc punch).
+## `look_dir` is where the camera is facing (e.g. -camera.global_basis.z).
+## `strength` is how hard to pull toward that direction (0..1).
+func steer_lunge(look_dir: Vector3, strength: float) -> void:
+	if not is_lunging(Time.get_ticks_msec() / 1000.0):
+		return
+	var target := look_dir.normalized()
+	var current := _lunge_velocity.normalized()
+	if current == Vector3.ZERO:
+		current = target
+	var blended := current.lerp(target, clampf(strength, 0.0, 1.0))
+	if blended == Vector3.ZERO:
+		return
+	var speed := _lunge_velocity.length()
+	_lunge_velocity = blended.normalized() * speed
+
 # Launch the owner with a lunge velocity (charged punch). Deprecated: use
 # start_lunge() instead so velocity survives _physics_process input overwrite.
 func lunge(speed: float) -> void:

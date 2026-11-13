@@ -41,6 +41,7 @@ var overlay: InteractionOverlay
 var _last_push := 0.0
 var input_locked := false
 var _q_press_time: float = -1.0   # Q press timestamp: throw charge / drop tap
+var _punch_charge_auto_fired: bool = false   # true once charged punch auto-fired at 1s
 var _hover_on := false
 var _hover_point := Vector3.ZERO
 
@@ -194,11 +195,13 @@ func _combat_input(event: InputEvent) -> void:
 	if event.is_action_pressed("punch"):
 		if combat.can_start_punch_charge():
 			_punch_input_active = true
+			_punch_charge_auto_fired = false
 			combat.set_punch_charge_held(true, Time.get_ticks_msec() / 1000.0)
 	if event.is_action_released("punch"):
 		if not _punch_input_active:
 			return
 		_punch_input_active = false
+		_punch_charge_auto_fired = false
 		if combat.can_release_punch_charge():
 			var started := combat.punch_charge_started()
 			combat.set_punch_charge_held(false, -1.0)
@@ -232,7 +235,7 @@ func _combat_throw_charged_punch(charge: float) -> void:
 			var is_charged := charge >= 1.0
 			punch_request.rpc_id(1, target_peer, charge)
 	if charge >= 1.0:
-		combat.lunge(LUNGE_SPEED)
+		combat.start_lunge(-(camera.global_basis.z), LUNGE_SPEED, 0.5)
 	_net_punch.rpc(charge)
 	if hands != null:
 		var p := ray.get_collision_point() if ray.is_colliding() else Vector3.ZERO
@@ -382,6 +385,14 @@ func _process(delta: float) -> void:
 	if not is_multiplayer_authority() or overlay == null:
 		return
 	combat.process(delta)
+	# Auto-fire charged punch when Q is held for PhysicsTuning.CHARGED_PUNCH_HOLD_SECONDS (1s).
+	if _punch_input_active and not _punch_charge_auto_fired:
+		var started := combat.punch_charge_started()
+		if now_f() - started >= PhysicsTuning.CHARGED_PUNCH_HOLD_SECONDS:
+			_punch_charge_auto_fired = true
+			combat.set_punch_charge_held(false, -1.0)
+			var charge := clampf(float((now_f() - started) * 1000.0) / PUNCH_CHARGE_MS, 0.0, 1.0)
+			_combat_throw_charged_punch(charge)
 	# Limp timer expired → recover (host tick). Clients recover via limp_recovered.
 	var now := now_f()
 	if state.is_limp() and state.limp_timer > 0.0 and now >= state.state_entered_at + state.limp_timer:
@@ -573,6 +584,9 @@ func _physics_process(delta: float) -> void:
 	# Preserve charged-punch lunge velocity during flight: input can't overwrite x/z.
 	var now := Time.get_ticks_msec() / 1000.0
 	if combat.is_lunging(now):
+		# Camera-arced lunge: steer toward where the player is looking while lunging,
+		# so they can arc left/right by looking that direction during the lunge.
+		combat.steer_lunge(-(camera.global_basis.z), 0.3)
 		velocity.x = combat.lunge_velocity().x
 		velocity.z = combat.lunge_velocity().z
 	elif not (input_locked or state.is_input_locked()) and now >= (state.limp_timer if state.limp_timer > 0.0 else 0.0):
