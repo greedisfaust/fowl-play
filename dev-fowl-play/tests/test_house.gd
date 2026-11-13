@@ -6,6 +6,7 @@ extends Node
 ## teleport / run reset). Runs headless as local host (peer 1).
 
 const Prop := preload("res://interaction/physics_prop.gd")
+const BodyPhys := preload("res://autoload/body_phys.gd")
 var failures := 0
 var checks := 0
 var world: Node3D
@@ -214,6 +215,26 @@ func _ready() -> void:
 	check(st.transition_to(PlayerState.State.IDLE), "limp->idle legal via recovery path")
 	check(st.state == PlayerState.State.IDLE, "back to idle")
 	check(st.is_limp() == false, "not limp after reset")
+
+	# --- limp Tier 1: BodyPhys limp mode -----------------------------------------
+	var bp: BodyPhys = player.get_node("BodyPhys") as BodyPhys
+	check(bp is BodyPhys, "player has a BodyPhys child")
+	# Enter limp mode directly.
+	bp.set_limp_mode(PhysicsTuning.LIMP_SECONDS)
+	check(bp.limp_mode, "BodyPhys limp mode set")
+	check(is_equal_approx(bp.mass, PhysicsTuning.LIMP_MASS_KG), "limp mass applied")
+	# clear_limp_mode resets mass and limp mode.
+	bp.clear_limp_mode()
+	check(not bp.limp_mode, "clear_limp_mode resets limp_mode")
+	check(is_equal_approx(bp.mass, PhysicsTuning.PROP_MASS_KG), "mass restored after clear")
+
+	# _ready_to_recover clears limp_mode so it can't fire twice.
+	bp.set_limp_mode(PhysicsTuning.LIMP_SECONDS)
+	check(bp.limp_mode, "limp mode set again")
+	bp._ready_to_recover()
+	check(not bp.limp_mode, "_ready_to_recover clears limp_mode")
+	check(is_equal_approx(bp.mass, PhysicsTuning.PROP_MASS_KG), "mass restored after _ready_to_recover")
+
 	# Interactable targeting: USE kind on plaque.
 	var plaques := get_tree().get_nodes_in_group("lore_guides")
 	var first_plaque := plaques[0] if plaques.size() > 0 else null

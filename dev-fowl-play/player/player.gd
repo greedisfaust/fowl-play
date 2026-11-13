@@ -284,6 +284,17 @@ func punch_request(target_id: int, charge: float) -> void:
 	var is_charged := bool(result[1])
 	if not valid:
 		return
+	# Host applies limp physics directly to the target's BodyPhys (host authority
+	# over all bodies). take_punch then runs on the target client for state
+	# machine + visuals only (apply_launch is a no-op there since is_authority
+	# is false on clients).
+	var target_bp := target.get_node_or_null("BodyPhys")
+	if target_bp is BodyPhys:
+		if is_charged:
+			target_bp.set_limp_mode(PhysicsTuning.LIMP_SECONDS)
+			target_bp.apply_launch((target.global_position - puncher.global_position).normalized(), PhysicsTuning.LUNGE_SPEED_MPS)
+		else:
+			target_bp.set_limp_mode(0.35)
 	take_punch.rpc_id(target_id, sender, charge, is_charged)
 
 @rpc("authority", "call_local", "reliable")
@@ -489,6 +500,7 @@ func interact(player: Node) -> void:
 func _on_limp_recovered(body: Node) -> void:
 	if body != body_phys:
 		return
+	body_phys.clear_limp_mode()
 	state.transition_to(PlayerState.State.IDLE)
 	state.set_limp_phase(PlayerState.LimpPhase.LIMP_GROUND)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED

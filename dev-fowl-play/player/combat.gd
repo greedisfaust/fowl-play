@@ -127,6 +127,7 @@ func apply_ragdoll(direction: Vector3, speed: float, seconds: float) -> void:
 	# Launch the body (host-authoritative via BodyPhys).
 	var bp := _body_phys_of(owner)
 	if bp is BodyPhys:
+		bp.set_limp_mode(seconds)
 		bp.apply_launch(direction, speed)
 	# visual slump: look down so the player reads as "downed"
 	if owner.has_node("Head"):

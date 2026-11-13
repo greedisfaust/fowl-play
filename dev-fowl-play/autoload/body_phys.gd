@@ -187,9 +187,11 @@ func _physics_process(delta: float) -> void:
 		last_synced_linear_velocity = linear_velocity
 		last_synced_angular_velocity = angular_velocity
 
-## Called by _physics_process when the limp timer expires. Emits limp_recovered
-## so the host can clear limp mode and return authority to the owner.
+## Called by _physics_process when the limp timer expires. Clears limp mode so
+## the signal can't fire again, then emits limp_recovered for the host to
+## transition the player back to IDLE at the body's current transform.
 func _ready_to_recover() -> void:
+	clear_limp_mode()
 	limp_recovered.emit(self)
 
 # --- replication ----------------------------------------------------------
