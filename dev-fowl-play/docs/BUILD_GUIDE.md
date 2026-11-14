@@ -42,6 +42,42 @@ A device is anything you USE rather than carry: buttons, keys, terminals, plaque
 
 ---
 
+## Charge punch (combat)
+
+**Input**: `InputMap` action `punch` (KEY_Q).
+
+| Phase | Trigger | What happens |
+|---|---|---|
+| Press | Q pressed down | `combat.set_punch_charge_held(true, now)` starts the charge timer |
+| Hold | Q held | Timer accumulates; the charged punch **auto-fires** after `PhysicsTuning.CHARGED_PUNCH_HOLD_SECONDS` (1.0s) while still holding Q. `_punch_charge_auto_fired` guards against firing twice per press. |
+| Release | Q let go before 1s | Held ≥ 150ms → charged punch with charge = held_ms / 1000ms (clamped 0..1). Held < 150ms → light jab (jiggle only, **no limp** — a jab shouldn't ragdoll). |
+
+**Can't punch while**: carrying anything, limp, or `carrier.is_carrying()` (`combat.can_start_punch_charge()` guards all of these).
+
+**Lunge**: when charge ≥ 1.0, `combat.start_lunge(direction, LUNGE_SPEED_MPS, 0.5)` stores a launch velocity with a 0.5s expiry. Direction is `-camera.global_basis.z` (forward from where the player is looking). `player.gd:_physics_process()` reads `combat.is_lunging(now)` and sets `velocity.x/z` from `combat.lunge_velocity()` instead of move input while true.
+
+**Camera arc (steer)**: while lunging, `combat.steer_lunge(-(camera.global_basis.z), 0.0, 3.0)` pulls the lunge velocity toward wherever the camera looks, capped at `max_turn_rad_per_sec = 3.0` rad/s — lets the player arc the punch left/right mid-lunge by looking that way.
+
+**Range**: `PUNCH_RANGE_M = 3.0` — `combat.validate_punch()` rejects targets farther than 3m.
+
+**Moving hitbox**: the charged-punch hitbox is parented to the puncher (`combat.spawn_punch_hitbox()`), so it moves with the puncher during the lunge instead of sitting stationary at the spawn point. Its lifetime is the full lunge duration (0.5s), so it can connect at any point during flight.
+
+**Hit during lunge stops the lunge**: if the moving hitbox overlaps a player while the puncher is still lunging, the lunge stops immediately (`combat.finish_lunge()` sets `_lunge_until = 0` and `_lunge_velocity = ZERO`) and the hit applies — knockdown + limp for 3.5s. The puncher's own machine stops locally; remote punches get `_net_lunge_stop.rpc_id(peer_id)`. The puncher stops where they landed the punch rather than carrying through to the end of the lunge.
+
+**Lunge ends with nothing hit**: if the 0.5s lunge expires without the hitbox overlapping anything, nothing happens — no damage, no limp, no jiggle. Normal movement input resumes after `_lunge_until` expires.
+
+**Interrupted by another charged punch**: if the puncher is hit by another charged punch while lunging, `combat.cancel_lunge()` aborts the lunge with no hit.
+
+**Files**:
+- `res://player/player.gd` — `_combat_input`, `_combat_do_light_jab`, `_combat_throw_charged_punch`, `punch_request`, `take_punch`, auto-fire in `_process`, lunge velocity preservation in `_physics_process`
+- `res://player/combat.gd` — `start_lunge`, `is_lunging`, `lunge_velocity`, `steer_lunge`, `finish_lunge`, `cancel_lunge`, parry state
+- `res://player/punch_hitbox.gd` — the moving hitbox; stops the lunge on hit
+- `res://scripts/physics_tuning.gd` — `LUNGE_SPEED_MPS`, `CHARGED_PUNCH_HOLD_SECONDS`, `CHARGED_PUNCH_RANGE_M`, `CHARGED_PUNCH_RAGDOLL_SECONDS`, `CHARGED_PUNCH_PUSH_SPEED_MPS`
+
+**Success:** hold Q ≥ 1s → charged punch fires; during lunge, looking left/right arcs the punch; hitting a player mid-lunge stops the lunge at the hit point and knocks them down for ~2.5–3.5s; letting Q go early (<1s, ≥150ms) throws a partial charged punch; tapping Q (<150ms) jabs with jiggle only.
+
+---
+
 ## Collision layers & masks (single source of truth: `res://scripts/physics_layers.gd`)
 
 | Layer | Bit | Lives on | Mask (hits) |
