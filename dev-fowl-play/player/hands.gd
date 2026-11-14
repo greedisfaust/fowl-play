@@ -287,13 +287,19 @@ func set_guard(active: bool) -> void:
 	var tw := create_tween()
 	_guard_tween = tw
 	var duration := 0.3 if active else 0.6   # smooth in: 0.3s, relax: 0.6s
+	var pitch_up := Quaternion.from_euler(Vector3(deg_to_rad(45.0), 0.0, 0.0))
 	for i in 2:
 		var side := -1.0 if i == 0 else 1.0
-		var target_q := Quaternion(Vector3.RIGHT, deg_to_rad(-20)) * Quaternion(Vector3.UP, deg_to_rad(side * 15))
+		var target_q: Quaternion
 		if active:
-			_guard_offset_goal[i] = Vector3(side * 0.12, 0.08, -0.30)
+			# Boxer guard: fists up at cheek level, palms facing inward,
+			# knuckles pointing outward/toward the opponent.
+			_guard_offset_goal[i] = Vector3(side * 0.07, 0.24, -0.06)
+			var yaw_in := Quaternion.from_euler(Vector3(0.0, side * deg_to_rad(18.0), 0.0))
+			target_q = (_rest_q[i] as Quaternion) * pitch_up * yaw_in
 		else:
 			_guard_offset_goal[i] = Vector3.ZERO
+			target_q = (_rest_q[i] as Quaternion)
 		tw.tween_property(_hands[i], "quaternion", target_q, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.finished.connect(func(): _guard_tween = null)
 
@@ -349,7 +355,11 @@ func _process(delta: float) -> void:
 		_guard_offset_cur[i] = _guard_offset_cur[i].lerp(_guard_offset_goal[i], 1.0 - exp(-delta * 12.0))
 	if not _busy:
 		_apply_pose(POKE_HAND, _hover_t)
-		_hands[POKE_HAND].quaternion = _rest_q[POKE_HAND].slerp(_aim_cur, _hover_t)
+		# Don't fight the parry-guard tween: if guard is active, leave the
+		# hand's quaternion to the tween (set by set_guard()).
+		var guard_active: bool = _guard_offset_goal[POKE_HAND] != Vector3.ZERO
+		if _guard_tween == null and not guard_active:
+			_hands[POKE_HAND].quaternion = _rest_q[POKE_HAND].slerp(_aim_cur, _hover_t)
 	_sway = _sway.lerp(Vector2.ZERO, minf(8.0 * delta, 1.0))
 	var shake_t := Time.get_ticks_msec() / 1000.0
 	if shake_t < _shake_until:

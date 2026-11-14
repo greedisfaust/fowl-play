@@ -1,0 +1,36 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+NETTEST ready: host=false
+NETTEST cmdline: [] _host=true
+NETTEST peer create error: 0 _host=true
+NETTEST host: _ready_to_pick, sender=494434503
+CARRYREG pickup RPC entered: holder_id=494434503 held_id=TestPropA is_server=true
+CARRYREG pickup: sender=494434503 _peer_of_request=494434503 holder_id=494434503
+CARRYREG lookup: holder=true held=true holder_path=/root/HouseNetworkTests/World/Players/494434503 held_path=/root/HouseNetworkTests/World/TestPropA
+CARRYREG reach: dist=1.64793407917023 REACH=3.2 eye=(-0.797671, 0.01146, -0.691533) held_pos=(-0.032509, 0.124998, -2.146635)
+CARRYREG calling _apply_hold: holder_id=494434503 held=true
+CARRYREG _apply_hold entered: holder_id=494434503 held=true
+CARRYREG _apply_hold: holder found=true
+CARRYREG _apply_hold: bp=false
+CARRYREG _apply_hold: calling held._apply_hold
+CARRYREG _apply_hold: held._apply_hold done
+CARRYREG _apply_hold: recorded in dictionaries
+CARRYREG _apply_hold: hold_begin emitted
+CARRYREG _apply_hold: _rpc_hold_begin.rpc called
+CARRYREG pickup RPC entered: holder_id=494434503 held_id=TestPropB is_server=true
+CARRYREG pickup: sender=494434503 _peer_of_request=494434503 holder_id=494434503
+CARRYREG lookup: holder=true held=true holder_path=/root/HouseNetworkTests/World/Players/494434503 held_path=/root/HouseNetworkTests/World/TestPropB
+CARRYREG pickup RPC entered: holder_id=494434503 held_id=TestPropB is_server=true
+CARRYREG pickup: sender=494434503 _peer_of_request=494434503 holder_id=494434503
+CARRYREG lookup: holder=true held=true holder_path=/root/HouseNetworkTests/World/Players/494434503 held_path=/root/HouseNetworkTests/World/TestPropB
+CARRYREG reach: dist=1.32664823532104 REACH=3.2 eye=(-0.891823, 0.000024, -0.725048) held_pos=(0.399992, 0.124998, -0.999984)
+CARRYREG calling _apply_hold: holder_id=494434503 held=true
+CARRYREG _apply_hold entered: holder_id=494434503 held=true
+CARRYREG _apply_hold: holder found=true
+CARRYREG _apply_hold: bp=false
+CARRYREG _apply_hold: calling held._apply_hold
+CARRYREG _apply_hold: held._apply_hold done
+CARRYREG _apply_hold: recorded in dictionaries
+CARRYREG _apply_hold: hold_begin emitted
+CARRYREG _apply_hold: _rpc_hold_begin.rpc called
+House ENet host: PASS (full-world spawn, sender validation, single slot, capped charge, disconnect cleanup)

@@ -478,5 +478,3 @@ func _can_reach(holder: Node3D, held: Node) -> bool:
 				c = c.get_parent()
 			return false
 	return true
-
-

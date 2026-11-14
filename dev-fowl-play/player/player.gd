@@ -1,4 +1,4 @@
-﻿extends CharacterBody3D
+﻿class_name Player extends CharacterBody3D
 
 ## Player node: thin coordinator (R9).
 ## Input -> component calls (Focus / Combat / Carrier / PlayerState), RPCs, node
@@ -200,6 +200,11 @@ func _apply_color() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_multiplayer_authority():
 		return
+	# Parry input must work even while parrying (F release ends the guard).
+	# Everything else is blocked while parrying: no punch, interact, move, or jump.
+	_parry_input(event)
+	if combat.is_parrying(Time.get_ticks_msec() / 1000.0):
+		return
 	if overlay != null and overlay.reading:
 		overlay.scroll_lore(event)
 		if event.is_action_pressed("use") or event.is_action_pressed("ui_cancel"):
@@ -234,7 +239,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	_carry_input(event)
 	_combat_input(event)
 	_parry_input(event)
-	if event.is_action_pressed("use") and not carrier.is_carrying():
+	if event.is_action_pressed("use") and not carrier.is_carrying() and not combat.is_parrying(Time.get_ticks_msec() / 1000.0):
 		_try_interact()
 	# Left click presses a device (USE only - never grabs a carryable).
 	# BC-1: left click presses a device when idle.
@@ -331,12 +336,18 @@ func _parry_input(event: InputEvent) -> void:
 	if event.is_action_pressed("parry"):
 		var now := Time.get_ticks_msec() / 1000.0
 		if combat.can_start_parry(now):
-			# Host-authoritative: tell the host to start parry + spawn barrier.
-			parry_request.rpc_id(1)
-	if event.is_action_released("parry"):
-		# End parry immediately: guard drops, barrier despawns.
-		parry_end_request.rpc_id(1)
-		hands.set_guard(false)
+			# Start parry locally for immediate guard + input lock, then ask the host
+			# to confirm and broadcast to everyone. The host's _net_parry reply is
+			# authoritative and will reset the same state (harmless if already set).
+			combat.start_parry(now)
+			if multiplayer.is_server():
+				# Host is the server: broadcast own parry directly (parry_request.rpc_id(1)
+				# would target self and fail sender validation).
+				_net_parry.rpc(str(name).to_int(), true)
+			else:
+				parry_request.rpc_id(1)
+	# Press once: parry stays active for the full PARRY_GRACE_SECONDS (1.5s),
+	# then auto-expires (expire_parry drops the guard). No hold-to-keep, no release-to-end.
 
 func now_f() -> float:
 	return Time.get_ticks_msec() / 1000.0
@@ -368,18 +379,18 @@ func punch_request(is_quick: bool, charge: float) -> void:
 		return   # invalid sender (should never happen)
 	if not multiplayer.is_server():
 		return   # host-authoritative: only the host spawns hitboxes
-	var puncher := _player_node(sender)
+	var puncher: Player = _player_node(sender) as Player
 	if puncher == null:
 		# Host called locally (sender = -1 or 1): use our own player node.
 		if multiplayer.is_server():
 			var world := get_tree().get_first_node_in_group("game_world")
 			if world != null:
 				var own_id := str(name).to_int()
-				puncher = world.get_node_or_null("Players/" + str(own_id))
+				puncher = world.get_node_or_null("Players/" + str(own_id)) as Player
 		if puncher == null:
 			return
 	# Host-authoritative: host spawns the punch hitbox.
-	combat.spawn_punch_hitbox(is_quick, charge)
+	combat.spawn_punch_hitbox(is_quick, charge, puncher, puncher.combat)
 	# Notify all clients for visuals (hands reach, VFX on the puncher's node).
 	var puncher_id := str(puncher.name).to_int()
 	_net_punch_hitbox.rpc(puncher_id, is_quick, charge)
@@ -387,19 +398,29 @@ func punch_request(is_quick: bool, charge: float) -> void:
 @rpc("any_peer", "call_local", "reliable")
 func parry_request() -> void:
 	var sender := multiplayer.get_remote_sender_id()
-	if sender != 0 and sender != str(name).to_int():
-		return   # the requester must own the node
 	if sender < -1:
 		return   # invalid sender
 	if not multiplayer.is_server():
 		return   # host-authoritative: only the host starts parries
-	# Host-authoritative: host starts parry + spawns barrier.
-	if not combat.start_parry(Time.get_ticks_msec() / 1000.0):
+	# Route to the requesting player's own combat component.
+	var target_player: Node3D = _player_node(sender) as Node3D
+	if target_player == null:
+		# Host called locally (sender = -1 or 1): use our own player node.
+		if multiplayer.is_server():
+			var world := get_tree().get_first_node_in_group("game_world")
+			if world != null:
+				var own_id := str(name).to_int()
+				target_player = world.get_node_or_null("Players/" + str(own_id)) as Node3D
+		if target_player == null:
+			return
+	var target_combat: Combat = target_player.combat
+	if not target_combat.start_parry(Time.get_ticks_msec() / 1000.0):
 		return   # on cooldown or already parrying
 	# Notify all clients for visuals (hands guard, barrier VFX).
 	_net_parry.rpc(sender, true)
-	# Host client also gets the VFX.
-	_net_parry(sender, true)
+	# Host client also gets the VFX when the host is the parrier.
+	if sender == str(name).to_int():
+		_net_parry(sender, true)
 
 @rpc("any_peer", "call_local", "reliable")
 func parry_end_request() -> void:
@@ -410,8 +431,11 @@ func parry_end_request() -> void:
 		return   # invalid sender
 	if not multiplayer.is_server():
 		return   # host-authoritative: only the host ends parries
-	# Host-authoritative: host ends parry + despawns barrier immediately.
-	combat.end_parry_immediately(Time.get_ticks_msec() / 1000.0)
+	# Host-authoritative: host ends parry on the requesting player's combat.
+	var target_player: Node3D = _player_node(sender) as Node3D
+	if target_player != null:
+		var target_combat: Combat = target_player.combat
+		target_combat.end_parry_immediately(Time.get_ticks_msec() / 1000.0)
 	# Notify all clients that parry ended.
 	_net_parry.rpc(sender, false)
 
@@ -447,31 +471,74 @@ func _net_punch_hitbox(puncher_id: int, is_quick: bool, charge: float) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _net_parry(parrier_id: int, active: bool) -> void:
-	var sender: int = multiplayer.get_remote_sender_id()
-	if sender != 0 and sender != 1:
-		return   # host-only
-	# All clients: show parry guard / barrier VFX on the parrier's instance.
-	var parrier := _player_node(parrier_id)
-	if parrier != null and parrier.has_node("Hands"):
-		combat.show_remote_barrier(active)
-		var h: Hands = parrier.get_node("Hands") as Hands
-		if h != null:
-			h.set_guard(active)
-	# Mirror parry state so is_parrying() works client-side (movement lock).
 	var now := Time.get_ticks_msec() / 1000.0
-	if active:
-		combat.set_parry_state(now + PhysicsTuning.PARRY_GRACE_SECONDS, now + PhysicsTuning.PARRY_COOLDOWN_SECONDS)
-	else:
-		combat.set_parry_state(0.0, now + PhysicsTuning.PARRY_COOLDOWN_SECONDS)
+	var local_id := str(name).to_int()
+	# Sync/clear parry combat state for the parrier on this machine. This clears
+	# lingering state on the host for remote players whose grace ran out.
+	var parrier_node := _player_node(parrier_id)
+	if parrier_node != null:
+		var parrier_player: Player = parrier_node as Player
+		if parrier_player != null:
+			var parrier_combat: Combat = parrier_player.combat
+			if active:
+				parrier_combat.set_parry_state(now + PhysicsTuning.PARRY_GRACE_SECONDS, now + PhysicsTuning.PARRY_COOLDOWN_SECONDS)
+			else:
+				parrier_combat.set_parry_state(0.0, now + PhysicsTuning.PARRY_COOLDOWN_SECONDS)
+	# Visuals: guard/barrier on the parrier's node. Use the stored hands reference if available.
+	var hands_node: Hands = null
+	if parrier_node != null:
+		var p: Player = parrier_node as Player
+		if p != null:
+			hands_node = p.hands
+	if hands_node == null:
+		# Fallback: try to find hands by path for remote replicas
+		hands_node = parrier_node.get_node_or_null("Head/Hands") as Hands
+		if hands_node == null:
+			hands_node = parrier_node.get_node_or_null("Head/Camera3D/Hands") as Hands
+			if hands_node == null:
+				hands_node = parrier_node.get_node_or_null("Hands") as Hands
+	if hands_node != null:
+		hands_node.set_guard(active)
+	if parrier_id == local_id:
+		combat.show_remote_barrier(active)
 	if overlay != null:
 		overlay.notice("PARRY READY" if active else "PARRY COOLDOWN")
 
 func _on_parry_ended() -> void:
-	# Host only: the grace ran out or a parry landed. Tell everyone to drop the guard.
+	# The grace ran out or a parry landed. Tell everyone to drop the guard.
+	# Host broadcasts directly; clients ask the host to broadcast (host is peer 1).
+	var id := str(name).to_int()
 	if multiplayer.is_server():
-		var id := str(name).to_int()
 		_net_parry.rpc(id, false)
-		_net_parry(id, false)
+	else:
+		_parry_expired_notify.rpc_id(1, id)
+
+# Host-only: a client's parry grace expired (or the client ended parry), so tell
+# everyone to drop the guard. Runs on the host because expire_parry() ticks only
+# on the authority machine for remote players.
+@rpc("any_peer", "call_local", "reliable")
+func _parry_expired_notify(parrier_id: int) -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if sender < -1:
+		return   # invalid sender
+	if not multiplayer.is_server():
+		return   # only the host receives client-to-host notifications
+	# Allow the parrier (or host) to notify that their parry grace expired.
+	if sender != parrier_id and sender != 1:
+		return   # only the player themselves (or host) may report their own expiry
+	# Broadcast to every remote peer so they drop the guard for the parrier,
+	# and apply it to the host's own copy of the remote parrier's state.
+	_net_parry.rpc(parrier_id, false)
+	_net_parry(parrier_id, false)
+
+# Tell a puncher's client to stop their lunge immediately (host's hitbox hit someone).
+# Runs on the client via authority.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_lunge_stop() -> void:
+	var sender := multiplayer.get_remote_sender_id()
+	if sender != 0 and sender != 1:
+		return   # only the host may stop a lunge
+	combat.finish_lunge()
 
 ## Every machine, every physics frame while limp: the root follows the body, never the reverse.
 func _limp_puppet(delta: float) -> void:
@@ -631,6 +698,7 @@ func interact(player: Node) -> void:
 # --- physics process ---------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
 	if state.is_limp():
 		_limp_puppet(delta)
 		return
@@ -641,12 +709,11 @@ func _physics_process(delta: float) -> void:
 		head.rotation.x = lerpf(head.rotation.x, _net_pitch, 0.3)
 		return
 	if is_on_floor():
-		if Input.is_action_just_pressed("jump") and not (input_locked or state.is_input_locked()):
+		if Input.is_action_just_pressed("jump") and not (input_locked or state.is_input_locked() or combat.is_parrying(now)):
 			velocity.y = JUMP_VELOCITY
 	else:
 		velocity.y -= GRAVITY * delta
 	# Preserve charged-punch lunge velocity during flight: input can't overwrite x/z.
-	var now := Time.get_ticks_msec() / 1000.0
 	if combat.is_lunging(now):
 		# Camera-arced lunge: steer toward where the player is looking while lunging,
 		# so they can arc left/right by looking that direction during the lunge.
@@ -721,7 +788,7 @@ func _net_hover_point(point: Vector3) -> void:
 func _net_reach(point: Vector3) -> void:
 	hands.reach(point)
 
-@rpc("authority", "call_local", "reliable")
+@rpc("any_peer", "call_local", "reliable")
 func teleport_to(pos: Vector3, yaw: float) -> void:
 	var sender := multiplayer.get_remote_sender_id()
 	if sender != 0 and sender != 1:

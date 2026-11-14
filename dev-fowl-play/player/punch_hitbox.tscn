@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://c1kdckmwbh6pk"]
+
+[ext_resource type="Script" uid="uid://d3idyis2pbg4m" path="res://player/punch_hitbox.gd" id="1_1wamm"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_yf5fn"]
+radius = 0.9
+
+[node name="PunchHitbox" type="Area3D" unique_id=1431622965]
+script = ExtResource("1_1wamm")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=919980805]
+shape = SubResource("SphereShape3D_yf5fn")

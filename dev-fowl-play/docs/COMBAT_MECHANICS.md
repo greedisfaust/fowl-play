@@ -29,6 +29,14 @@ Describes the intended feel and rules for Q punch, F parry, and limp state. Use 
 
 **Range**: `PUNCH_RANGE_M = 3.0` — `combat.validate_punch()` rejects targets farther than 3m.
 
+**Moving hitbox**: the charged-punch hitbox is spawned in front of the puncher and is parented to the puncher's node (`combat.spawn_punch_hitbox()` parents it), so it moves with the puncher during the lunge instead of sitting stationary at the spawn point. Its lifetime is the full lunge duration (0.5s), so it can connect at any point during the flight.
+
+**Hit during lunge stops the lunge**: if the moving hitbox overlaps a player while the puncher is still lunging, the lunge stops immediately (`combat.finish_lunge()` sets `_lunge_until = 0` and `_lunge_velocity = ZERO`, and the host RPCs `_net_lunge_stop` to the puncher's client) and the hit applies — knockdown + limp for 3.5s. The puncher stops where they landed the punch rather than carrying through to the end of the lunge.
+
+**Lunge ends with nothing hit**: if the 0.5s lunge expires without the hitbox overlapping anything, nothing happens — no damage, no limp, no jiggle. Normal movement input resumes after `_lunge_until` expires.
+
+**Interrupted by another charged punch**: if the puncher is hit by another charged punch while lunging, `combat.cancel_lunge()` aborts the lunge with no hit (the victim's `host_knock_down` calls `combat.cancel_lunge()` on themselves).
+
 ## 3. Parry (F)
 
 **Input**: `InputMap` action `parry` (KEY_F).

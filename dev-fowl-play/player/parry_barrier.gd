@@ -2,64 +2,72 @@ extends Area3D
 
 class_name ParryBarrier
 
-## Parry barrier: spawned by Combat around the parrying player. Detects incoming
-## PunchHitbox areas via area_entered; on detection, triggers parry success
-## (punch cancelled, puncher recoils). Despawns when parry ends.
-##
-## Authority: host only.
+## Parry barrier: a shield cylinder around the parrying player. The HOST copy judges
+## parries (try_parry); client copies are visual only. Despawned by Combat.
 
 @export var owner_id: int = 0
 @export var radius_m: float = 1.2
 @export var height_m: float = 2.0
-var combat: Combat = null   # set by Combat._spawn_barrier()
-
-var _timer: float = 0.0
-var _active: bool = true
-var _parried: bool = false   # only parry once per barrier lifetime
+var combat: Combat = null        # set by Combat before add_child (host copy only)
+var visual_only := false         # client copies: show the shield, never judge
 
 func _ready() -> void:
 	add_to_group("parry_barrier")
+	position = Vector3(0, height_m * 0.5, 0)   # centered on the body, not on the feet
+	_fit_shape()
+	_fit_visual()
+	if visual_only:
+		monitoring = false
+		monitorable = false
+		collision_layer = 0
+		collision_mask = 0
+		return
+	collision_layer = PhysicsLayers.LAYER_PARRY_BARRIER
+	collision_mask = PhysicsLayers.MASK_PARRY_BARRIER | PhysicsLayers.LAYER_PUNCH_HITBOX
 	area_entered.connect(_on_area_entered)
-	# Shape: cylinder
-	var shape := CylinderShape3D.new()
+
+func _fit_shape() -> void:
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col == null:
+		col = CollisionShape3D.new()
+		add_child(col)
+	var shape := CylinderShape3D.new()   # fresh resource: the scene's one is shared by every instance
 	shape.radius = radius_m
 	shape.height = height_m
-	var col := CollisionShape3D.new()
 	col.shape = shape
-	add_child(col)
-	# Layers: barrier IS on PARRY_BARRIER layer; detects PUNCH_HITBOX
-	collision_layer = PhysicsLayers.LAYER_PARRY_BARRIER
-	collision_mask = PhysicsLayers.MASK_PARRY_BARRIER
-	# Visual: transparent cylinder so players can see the parry state
-	var visual := MeshInstance3D.new()
-	visual.mesh = CylinderMesh.new()
-	visual.scale = Vector3.ONE * radius_m
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.2, 0.6, 1.0, 0.3)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	visual.material_override = mat
-	add_child(visual)
 
-func _process(delta: float) -> void:
-	if not _active:
-		queue_free()
-		return
+func _fit_visual() -> void:
+	var mi := get_node_or_null("MeshInstance3D") as MeshInstance3D
+	if mi == null:
+		mi = MeshInstance3D.new()
+		add_child(mi)
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius_m
+	mesh.bottom_radius = radius_m
+	mesh.height = height_m
+	mi.mesh = mesh
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.2, 0.6, 1.0, 0.6)   # more visible than 0.3 alpha
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mi.material_override = mat
+	mi.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA   # use alpha blending
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 func _on_area_entered(area: Area3D) -> void:
-	if _parried:
-		return
-	if not area.is_in_group("punch_hitbox"):
-		return
-	# Parry success: incoming punch hitbox cancelled
-	_parried = true
-	_active = false
-	# Notify combat (passed by Combat._spawn_barrier)
-	if combat != null and combat.has_method("on_parry_success"):
-		combat.on_parry_success(area)
-	queue_free()
+	if area.is_in_group("punch_hitbox"):
+		try_parry(area)
 
-func _get_owner_node() -> Node:
-	var world := get_tree().get_first_node_in_group("game_world")
-	if world != null:
-		return world.get_node_or_null("Players/" + str(owner_id))
-	return null
+## Returns true if this barrier just blocked the punch. Called from both the
+## barrier's area_entered and the hitbox's body_entered, so order doesn't matter.
+## One barrier can block multiple punches during the parry window.
+func try_parry(hitbox: Node) -> bool:
+	if visual_only:
+		return false
+	if hitbox == null or not is_instance_valid(hitbox):
+		return false
+	if int(hitbox.get("owner_id")) == owner_id:
+		return false   # your own punch can't trip your own shield
+	if combat != null:
+		combat.on_parry_success(hitbox)
+	return true

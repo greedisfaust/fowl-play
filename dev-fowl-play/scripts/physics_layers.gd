@@ -35,3 +35,15 @@ const MASK_HEALTHY_PLAYERS: int = \
 const MASK_LIMP_BODIES: int = \
 	LAYER_WORLD_STATIC | LAYER_PROPS | LAYER_HEALTHY_PLAYERS | LAYER_LIMP_BODIES
 const MASK_ELEVATOR: int = LAYER_WORLD_STATIC | LAYER_HEALTHY_PLAYERS | LAYER_LIMP_BODIES
+
+## Added for hitbox combat (Phase: hitbox rework)
+## Layer 8 = PunchHitbox area (what a punch hitbox IS)
+## Layer 9 = ParryBarrier area (what a parry barrier IS)
+const LAYER_PUNCH_HITBOX: int = 128   # layer 8 — punch hitbox areas
+const LAYER_PARRY_BARRIER: int = 256  # layer 9 — parry barrier areas
+
+# Hitbox masks
+const MASK_PUNCH_HITBOX: int = \
+	LAYER_HEALTHY_PLAYERS | LAYER_LIMP_BODIES | LAYER_PROPS  # what a punch can clobber
+const MASK_PARRY_BARRIER: int = \
+	LAYER_PUNCH_HITBOX  # what a barrier detects: incoming punch hitboxes

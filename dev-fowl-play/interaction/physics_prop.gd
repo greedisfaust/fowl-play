@@ -22,6 +22,7 @@ var _home: Transform3D = Transform3D.IDENTITY
 # --- setup ----------------------------------------------------------------
 
 func _ready() -> void:
+	super()   # BodyPhys._ready: mass, damp, groups, authority, dormant for player bodies
 	add_to_group("physics_props")
 	_home = global_transform
 
@@ -41,7 +42,7 @@ func _ready() -> void:
 				mass = PhysicsTuning.LARGE_PROP_MASS_KG
 			PropProfile.WeightClass.IMMOVABLE:
 				mass = PhysicsTuning.LARGE_PROP_MASS_KG
-				freeze = true   # immovable: never simulated by anyone
+				immovable = true   # immovable: never simulated by anyone
 		linear_damp = PhysicsTuning.LINEAR_DAMP
 		angular_damp = PhysicsTuning.ANGULAR_DAMP
 		gravity_scale = PhysicsTuning.GRAVITY_SCALE

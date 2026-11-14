@@ -1,0 +1,10 @@
+Godot Engine v4.7.2.stable.steam.ed1daf0bf - https://godotengine.org
+
+NETTEST ready: host=false
+NETTEST cmdline: [] _host=false
+NETTEST peer create error: 0 _host=false
+NETTEST client connected, uid=494434503
+NETTEST client: sent pickup for TestPropA
+NETTEST client: hold_begin received for TestPropA
+NETTEST client: sent pickup for TestPropB (expect rejection)
+House ENet client: PASS (one slot, carry state, charged release)

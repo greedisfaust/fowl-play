@@ -1,0 +1,6 @@
+ERROR: The multiplayer instance isn't currently active.
+   at: get_unique_id (modules/enet/enet_multiplayer_peer.cpp:438)
+   GDScript backtrace (most recent call first):
+       [0] on_run_reset (res://autoload/carry_registry.gd:313)
+       [1] _go_solo (res://world.gd:95)
+       [2] _on_host_left (res://world.gd:91)

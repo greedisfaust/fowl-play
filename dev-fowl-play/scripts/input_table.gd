@@ -97,4 +97,3 @@ func resolve(state: String, input: String, held_seconds: float = 0.0) -> Array:
 				return [Action.NONE, 0.0]
 
 	return [Action.NONE, 0.0]
-

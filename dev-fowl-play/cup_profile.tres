@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="PropProfile" format=3 uid="uid://uliboihfcfh1"]
+
+[ext_resource type="Script" uid="uid://bykw12w51tiuj" path="res://scripts/prop_profile.gd" id="1_457hk"]
+
+[resource]
+script = ExtResource("1_457hk")
+metadata/_custom_type_script = "uid://bykw12w51tiuj"

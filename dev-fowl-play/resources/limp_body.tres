@@ -1,0 +1,12 @@
+[gd_resource type="PhysicsMaterial" load_steps=2 format=3 uid="uid://new-limps-body-material"]
+
+[bounce]
+bounce = 0.05
+bounce_threshold = 0.0
+bounce_abs_threshold = 0.0
+
+[friction]
+friction = 0.9
+friction_slide = 0.9
+friction_spin = 0.9
+friction_abs = 0.9
