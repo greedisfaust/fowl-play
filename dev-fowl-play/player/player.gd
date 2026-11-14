@@ -162,7 +162,7 @@ func _ready() -> void:
 	ray.add_exception(self)
 	if Style.font:
 		$NamePlate.font = Style.font
-	$NamePlate.visible = not mine
+		$NamePlate.visible = not mine
 	hands = Hands.new()
 	hands.world_mode = not mine   # your own hands are first-person; everyone else's sit on the body
 	(camera if mine else head).add_child(hands)
@@ -238,7 +238,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	# and on the kind of thing looked at - no overloaded actions.
 	_carry_input(event)
 	_combat_input(event)
-	_parry_input(event)
 	if event.is_action_pressed("use") and not carrier.is_carrying() and not combat.is_parrying(Time.get_ticks_msec() / 1000.0):
 		_try_interact()
 	# Left click presses a device (USE only - never grabs a carryable).
@@ -252,11 +251,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				target = target.get_parent()
 				if target != null:
 					interactable = Interactable.find(target)
-			if target != null and interactable != null and interactable.kind == Interactable.Kind.USE:
-				if interactable.can_interact(self):
-					var p := ray.get_collision_point()
-					hands.reach(p)
-					interactable.interact(self)
+			if target != null and interactable != null and interactable.can_interact(self):
+				var p := ray.get_collision_point()
+				hands.reach(p)
+				_net_reach.rpc(p)
+				interactable.interact(self)
 
 # --- carry input: DROP (tap Q) / THROW (hold Q); GRAB is via E (_try_interact) ----
 

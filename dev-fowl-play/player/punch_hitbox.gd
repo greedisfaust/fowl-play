@@ -106,7 +106,7 @@ func _hit_player(root: Node3D) -> void:
 	if is_quick:
 		root.rpc("receive_jiggle", dir)
 		return
-	# Single knockdown path: the host decides and simulates; everyone mirrors via
+	# Single knockdown path: the host decides andk, simulates; everyone mirrors via
 	# _net_limp_begin / _net_limp_end reliable RPCs.
 	root.call("host_knock_down", dir, push_speed, ragdoll_seconds)
 
