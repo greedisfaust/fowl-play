@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://cqhrlgguy6se6"]
 
 [ext_resource type="PackedScene" uid="uid://btc6fb15a0wuu" path="res://props/base_prop.tscn" id="1_wm4w0"]
-[ext_resource type="PropProfile" path="res://resources/profiles/light_prop.tres" id="2_71swj"]
+[ext_resource type="Resource" uid="uid://bh2kwkkq2iwpu" path="res://resources/profiles/light_prop.tres" id="2_71swj"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_guuv6"]
 size = Vector3(0.3, 0.25, 0.24)
