@@ -44,6 +44,8 @@ var _q_press_time: float = -1.0   # Q press timestamp: throw charge / drop tap
 var _punch_charge_auto_fired: bool = false   # true once charged punch auto-fired at 1s
 var _head_rest_y: float = 1.6   # owner's eye height when standing
 var _body_rest_transform: Transform3D = Transform3D.IDENTITY   # $Body rest transform
+var _limp_yaw: float = 0.0   # accumulated mouse yaw while limp (applied on top of body tumble)
+var _limp_pitch: float = 0.0 # accumulated mouse pitch while limp
 var _hover_on := false
 var _hover_point := Vector3.ZERO
 
@@ -87,6 +89,10 @@ func _apply_limb_begin(start_pos: Vector3, launch: Vector3, seconds: float) -> v
 	_set_root_collision(false)
 	body_phys.begin_limp(Transform3D(Basis.IDENTITY, start_pos), launch, seconds)
 	input_locked = true
+	# Seed limp yaw from where the player was facing; pitch starts at 0 so the
+	# head doesn't snap to a mismatched local pitch (which caused the vertical flip).
+	_limp_yaw = rotation.y
+	_limp_pitch = 0.0
 
 @rpc("any_peer", "call_remote", "reliable")
 func _net_limb_begin(start_pos: Vector3, launch: Vector3, seconds: float) -> void:
@@ -119,8 +125,11 @@ func _apply_recovery(final: Vector3) -> void:
 	state.transition_to(PlayerState.State.IDLE)
 	input_locked = false
 	head.position.y = _head_rest_y
-	head.rotation.x = 0.0
-	head.rotation.z = 0.0
+	head.global_position = global_position + Vector3(0.0, _head_rest_y, 0.0)
+	head.rotation = Vector3.ZERO        # full reset: x, y, z all back to identity
+	rotation.y = 0.0
+	_limp_yaw = 0.0
+	_limp_pitch = 0.0
 	$Body.transform = _body_rest_transform
 	if is_multiplayer_authority():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -160,13 +169,13 @@ func _ready() -> void:
 	Network.players_changed.connect(_update_nameplate)
 	_update_nameplate()
 	_net_pos = position
+	_head_rest_y = head.position.y
+	_body_rest_transform = $Body.transform
 	if mine:
 		overlay = Overlay.new()
 		add_child(overlay)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		base_cam_rot = camera.rotation   # camera shake resets to this each frame (bug #13)
-		_head_rest_y = head.position.y
-		_body_rest_transform = $Body.transform
 	# Wire up components.
 	combat.setup(self, head, hands, overlay, state, carrier)
 	combat.parry_ended.connect(_on_parry_ended)
@@ -211,9 +220,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		return
 	if event is InputEventMouseMotion:
-		rotate_y(-event.relative.x * MOUSE_SENS)
-		head.rotate_x(-event.relative.y * MOUSE_SENS)
-		head.rotation.x = clampf(head.rotation.x, deg_to_rad(-85), deg_to_rad(85))
+		if state.is_limp():
+			_limp_yaw -= event.relative.x * MOUSE_SENS
+			_limp_pitch -= event.relative.y * MOUSE_SENS
+			_limp_pitch = clampf(_limp_pitch, deg_to_rad(-85), deg_to_rad(85))
+		else:
+			rotate_y(-event.relative.x * MOUSE_SENS)
+			head.rotate_x(-event.relative.y * MOUSE_SENS)
+			head.rotation.x = clampf(head.rotation.x, deg_to_rad(-85), deg_to_rad(85))
 		hands.add_sway(event.relative)
 	# Context resolution (one place, R6 / R1): what a press does depends on state
 	# and on the kind of thing looked at - no overloaded actions.
@@ -468,12 +482,16 @@ func _limp_puppet(delta: float) -> void:
 	mesh.global_basis = body_phys.global_basis                     # the tumble shows on the mesh
 	mesh.global_position = body_phys.global_position + body_phys.global_basis * Vector3(0.0, 0.9, 0.0)
 	if is_multiplayer_authority():
-		# The owner can still look around (mouse look runs in _unhandled_input). Lower the camera.
-		head.position.y = move_toward(head.position.y, PhysicsTuning.LIMP_CAMERA_HEIGHT_M, 4.0 * delta)
+		# Anchor the camera to the tumbling body: position follows BodyPhys,
+		# rotation is body tumble + accumulated mouse look.
+		head.global_position = body_phys.global_position + body_phys.global_basis * Vector3(0.0, _head_rest_y, 0.0)
+		head.global_basis = body_phys.global_basis * Basis(Vector3.UP, _limp_yaw) * Basis(Vector3.RIGHT, _limp_pitch)
 		_net_state.rpc(global_position, rotation.y, head.rotation.x)
 	else:
-		rotation.y = lerp_angle(rotation.y, _net_yaw, 0.3)
-		head.rotation.x = lerpf(head.rotation.x, _net_pitch, 0.3)
+		# Remote viewers: head follows the tumbling body position + basis,
+		# so the camera/beak/hands stay attached to the body capsule.
+		head.global_position = body_phys.global_position + body_phys.global_basis * Vector3(0.0, _head_rest_y, 0.0)
+		head.global_basis = body_phys.global_basis
 
 
 	# Client receives a jiggle from a quick punch (visual only, no physics).

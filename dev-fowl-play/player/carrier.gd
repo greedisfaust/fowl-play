@@ -42,6 +42,11 @@ func _on_hold_end(holder_id: int, held_id: Variant, threw: bool) -> void:
 	if holder_id != _owner_peer_id():
 		return
 	carried = null
+	# Host already called clear_carry_mode(launch) in _release_hold before
+	# emitting hold_end, so skip here to preserve the throw velocity.
+	# Clients still need to release their local carry-mode lock (no launch).
+	if _owner != null and _owner.multiplayer.is_server():
+		return
 	# Client-side prediction: release the local carry-mode lock.
 	var node: Node = CarryRegistry.node_for_held(held_id)
 	if node != null:
