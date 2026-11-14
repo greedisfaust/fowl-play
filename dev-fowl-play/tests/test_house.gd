@@ -219,21 +219,21 @@ func _ready() -> void:
 	# --- limp Tier 1: BodyPhys limp mode -----------------------------------------
 	var bp: BodyPhys = player.get_node("BodyPhys") as BodyPhys
 	check(bp is BodyPhys, "player has a BodyPhys child")
-	# Enter limp mode directly.
-	bp.set_limp_mode(PhysicsTuning.LIMP_SECONDS)
-	check(bp.limp_mode, "BodyPhys limp mode set")
+	# Enter limp mode directly via begin_limp.
+	bp.begin_limp(bp.global_transform, Vector3.ZERO, PhysicsTuning.LIMP_SECONDS)
+	check(bp.limp_mode, "BodyPhys limp mode set via begin_limp")
 	check(is_equal_approx(bp.mass, PhysicsTuning.LIMP_MASS_KG), "limp mass applied")
-	# clear_limp_mode resets mass and limp mode.
-	bp.clear_limp_mode()
-	check(not bp.limp_mode, "clear_limp_mode resets limp_mode")
-	check(is_equal_approx(bp.mass, PhysicsTuning.PROP_MASS_KG), "mass restored after clear")
+	# end_limp resets mass and limp mode.
+	bp.end_limp(bp.global_transform)
+	check(not bp.limp_mode, "end_limp resets limp_mode")
+	check(is_equal_approx(bp.mass, PhysicsTuning.PROP_MASS_KG), "mass restored after end_limp")
 
-	# _ready_to_recover clears limp_mode so it can't fire twice.
-	bp.set_limp_mode(PhysicsTuning.LIMP_SECONDS)
+	# end_limp clears limp_mode so it can't fire twice.
+	bp.begin_limp(bp.global_transform, Vector3.ZERO, PhysicsTuning.LIMP_SECONDS)
 	check(bp.limp_mode, "limp mode set again")
-	bp._ready_to_recover()
-	check(not bp.limp_mode, "_ready_to_recover clears limp_mode")
-	check(is_equal_approx(bp.mass, PhysicsTuning.PROP_MASS_KG), "mass restored after _ready_to_recover")
+	bp.end_limp(bp.global_transform)
+	check(not bp.limp_mode, "end_limp clears limp_mode")
+	check(is_equal_approx(bp.mass, PhysicsTuning.PROP_MASS_KG), "mass restored after end_limp")
 
 	# Interactable targeting: USE kind on plaque.
 	var plaques := get_tree().get_nodes_in_group("lore_guides")
