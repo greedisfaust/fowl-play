@@ -9,14 +9,20 @@ signal submitted(text: String)
 
 @onready var screen: Screen3D = $Screen
 
+const PlayerScript := preload("res://player/player.gd")
+
 var text := ""
 var _backup := ""
 var _typing := false
-var _player: Node = null
+var _player: PlayerScript = null
 var _open_frame := -1
 
 func _ready() -> void:
 	_refresh()
+	# Expose the single Interactable contract (R1).
+	var interactable := Interactable.new()
+	interactable.kind = Interactable.Kind.USE
+	add_child(interactable)
 
 func is_typing() -> bool:
 	return _typing
@@ -25,11 +31,14 @@ func set_text(t: String) -> void:
 	text = t
 	_refresh()
 
+func get_interaction_prompt(_player: Node) -> String:
+	return "Edit " + title
+
 func interact(player: Node) -> void:
 	if _typing:
 		return
 	_typing = true
-	_player = player
+	_player = player as PlayerScript
 	_player.input_locked = true
 	_open_frame = Engine.get_process_frames()
 	_backup = text
@@ -65,7 +74,7 @@ func _handle_key(event: InputEventKey) -> void:
 func _finish(accept: bool) -> void:
 	_typing = false
 	if _player:
-		_player.input_locked = false
+		(_player as CharacterBody3D).input_locked = false
 		_player = null
 	if accept and text.strip_edges() != "":
 		submitted.emit(text)

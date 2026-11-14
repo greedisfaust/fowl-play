@@ -1,188 +1,182 @@
-class_name PhysicsProp
-extends RigidBody3D
-## Only the host simulates loose props. Clients interpolate authoritative snapshots.
-const REACH := 3.2
-const CHARGE_SECONDS := 1.25
-const MIN_THROW_SPEED := 3.0
-const MAX_THROW_SPEED := 14.0
+extends BodyPhys
 
-@export var item_name := "Object"
-@export var can_pick_up := true
-var holder_id := 0
-var _home := Transform3D.IDENTITY
-var _net_position := Vector3.ZERO
-var _net_rotation := Quaternion.IDENTITY
-var _snapshot_time := 0.0
-var _charge_started := -1
-var _last_push := -1000
+class_name PhysicsProp
+
+## Carryable prop (R2 + R3): a BodyPhys that routes hold state through
+## CarryRegistry. One pickup/drop/throw path shared with limp players.
+##
+## Authority: host simulates (freeze=false), clients freeze + interpolate
+## BodyPhys changed-only snapshots. While carried, freeze=true and the body
+## follows the carrier anchor via BodyPhys carry mode.
+##
+## A PropProfile resource (assigned in the Inspector) picks weight class,
+## pickup/throw allowed, friction/bounce preset, size class, and optional
+## impact sound. No per-prop magic numbers.
+
+@export var item_name: String = "Object"
+@export var can_pick_up: bool = true
+@export var profile: PropProfile = null   # assigned in Inspector; no code default
+var holder_id: int = 0        # mirrored from CarryRegistry for quick reads
+var _home: Transform3D = Transform3D.IDENTITY
+
+# --- setup ----------------------------------------------------------------
 
 func _ready() -> void:
+	super()   # BodyPhys._ready: mass, damp, groups, authority, dormant for player bodies
 	add_to_group("physics_props")
 	_home = global_transform
-	_net_position = global_position
-	_net_rotation = global_basis.get_rotation_quaternion()
-	freeze = not multiplayer.is_server()
-	continuous_cd = true
-	linear_damp = 0.8
-	angular_damp = 1.5
-	multiplayer.peer_disconnected.connect(_peer_left)
-	multiplayer.peer_connected.connect(_send_initial)
-	GameState.run_reset.connect(reset_prop)
 
-func interact(_player: Node) -> void:
-	request_use.rpc_id(1)
+	# Props live on the PROPS layer so the focus ray (MASK_FOCUS_RAY) can hit them.
+	# Scene-based props set this in their .tscn; code-built props (house_environment.gd)
+	# need it here so they remain focusable during the room-by-room migration.
+	collision_layer = 4
+
+	# Apply the profile: mass, friction, bounce, pickup, throwable.
+	if profile != null:
+		match profile.weight_class:
+			PropProfile.WeightClass.LIGHT:
+				mass = PhysicsTuning.PROP_MASS_KG
+			PropProfile.WeightClass.MEDIUM:
+				mass = 2.0
+			PropProfile.WeightClass.HEAVY:
+				mass = PhysicsTuning.LARGE_PROP_MASS_KG
+			PropProfile.WeightClass.IMMOVABLE:
+				mass = PhysicsTuning.LARGE_PROP_MASS_KG
+				immovable = true   # immovable: never simulated by anyone
+		linear_damp = PhysicsTuning.LINEAR_DAMP
+		angular_damp = PhysicsTuning.ANGULAR_DAMP
+		gravity_scale = PhysicsTuning.GRAVITY_SCALE
+		can_pick_up = profile.pickup_allowed
+		continuous_cd = true
+	else:
+		mass = PhysicsTuning.PROP_MASS_KG
+		linear_damp = PhysicsTuning.LINEAR_DAMP
+		angular_damp = PhysicsTuning.ANGULAR_DAMP
+		gravity_scale = PhysicsTuning.GRAVITY_SCALE
+
+	# Expose the single Interactable contract (R1).
+	var interactable := Interactable.new()
+	interactable.kind = Interactable.Kind.GRAB if can_pick_up else Interactable.Kind.USE
+	add_child(interactable)
+
+	# Host simulates; clients interpolate (set in BodyPhys._enter_tree).
+
+# --- Carryable contract ---------------------------------------------------
+
+func pickup(holder: Node) -> void:
+	# Called by Carrier: ask the host to register the hold.
+	var who := _holder_peer_id(holder)
+	if who == 0:
+		who = 1
+	if multiplayer.is_server():
+		CarryRegistry.hold_request_pickup(who, name)   # local call when we're the host
+	else:
+		CarryRegistry.hold_request_pickup.rpc_id(1, who, name)
+
+func release(throw: bool, direction: Vector3, speed: float) -> void:
+	# Called by Carrier: ask the host to release (drop or throw).
+	var who := holder_id
+	if who == 0:
+		who = 1
+	if multiplayer.is_server():
+		CarryRegistry.hold_request_drop(who, throw)   # local call when we're the host
+	else:
+		CarryRegistry.hold_request_drop.rpc_id(1, who, throw)
+
+func is_carried() -> bool:
+	if CarryRegistry == null:
+		return false
+	return CarryRegistry.held_by.has(self)
+
+func get_carry_offset() -> Vector3:
+	# Held in the right hand, head-relative:
+	#   x = right, y = down from eye level to chest, z = in front of face
+	return Vector3(0.45, -0.40, -0.70)
+
+func get_throw_speed(charge: float) -> float:
+	return lerpf(PhysicsTuning.MIN_THROW_SPEED_MPS, PhysicsTuning.MAX_THROW_SPEED_MPS, clampf(charge, 0.0, 1.0))
+
+# --- interaction (USE when not carryable, GRAB when carryable) ------------
+
+func interact(player: Node) -> void:
+	if not can_pick_up:
+		# Non-pickupable: shove away (host-authoritative push).
+		request_push.rpc_id(1, _holder_peer_id(player))
+		return
+	# Carryable: request pickup via the registry.
+	var who := _holder_peer_id(player)
+	if multiplayer.is_server():
+		CarryRegistry.hold_request_pickup(who, name)   # local call when we're the host
+	else:
+		CarryRegistry.hold_request_pickup.rpc_id(1, who, name)
 
 func get_interaction_prompt(player: Node) -> String:
-	if holder_id != 0:
+	if is_carried():
 		return item_name + " (carried)"
-	if can_pick_up and held_by(get_tree(), str(player.name).to_int()) != null:
-		return "Hand full - G to drop your object"
-	return ("Pick up " if can_pick_up else "Push ") + item_name
+	if can_pick_up:
+		return "Pick up " + item_name
+	return "Push " + item_name
 
-static func held_by(tree: SceneTree, who: int) -> PhysicsProp:
-	for prop in tree.get_nodes_in_group("physics_props"):
-		if prop.holder_id == who:
-			return prop
-	return null
+func can_interact(player: Node) -> bool:
+	return can_pick_up or true   # pushable props are always interactable
 
-static func throw_speed(seconds: float) -> float:
-	return lerpf(MIN_THROW_SPEED, MAX_THROW_SPEED, clampf(seconds / CHARGE_SECONDS, 0.0, 1.0))
+# --- host-side hold application (called by CarryRegistry) -----------------
 
-func _player(who: int) -> Node3D:
-	return get_tree().get_first_node_in_group("game_world").get_node_or_null("Players/" + str(who)) if get_tree().has_group("game_world") else null
+## Apply a hold: this prop is now carried by `holder`. Called by CarryRegistry
+## on the host; replicated to clients via hold_begin.rpc.
+func _apply_hold(holder_id_arg: int) -> void:
+	holder_id = holder_id_arg
+	var holder := _player_node(holder_id_arg)
+	var offset := get_carry_offset()
+	if holder != null:
+		set_carry_mode(holder as Node3D, offset)
+	else:
+		set_carry_mode(null, Vector3.ZERO)
 
-func _sender() -> int:
+## Release the hold. `threw` true = apply launch velocity.
+func _release_hold(threw: bool, launch: Vector3 = Vector3.ZERO) -> void:
+	holder_id = 0
+	clear_carry_mode(launch)
+
+# --- push (non-pickupable props) ------------------------------------------
+
+@rpc("any_peer", "call_local", "reliable")
+func request_push(who: int = 1) -> void:
+	if not multiplayer.is_server() or is_carried():
+		return
+	var player := _player_node(who)
+	if player == null:
+		return
+	var direction: Vector3 = global_position - player.global_position
+	direction.y = 0.0
+	if direction == Vector3.ZERO:
+		direction = Vector3.RIGHT
+	apply_body_impulse(direction.normalized(), mass * 2.2)
+
+var _last_push: float = -1000.0
+
+# --- out-of-bounds home return (host) -------------------------------------
+
+func _process(delta: float) -> void:
+	# Host: return out-of-bounds props home (runs alongside BodyPhys physics).
+	if multiplayer.is_server() and not is_carried() and global_position.y < -10.0:
+		global_transform = _home
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		sleeping = false
+
+# --- helpers --------------------------------------------------------------
+
+func _sender_id() -> int:
 	var sender := multiplayer.get_remote_sender_id()
 	return 1 if sender == 0 else sender
 
-func _can_reach(who: int, line_of_sight := true) -> bool:
-	var player := _player(who)
-	if not Network.players.has(who) or player == null:
-		return false
-	var eye: Vector3 = player.head.global_position
-	if eye.distance_to(global_position) > REACH:
-		return false
-	if line_of_sight:
-		var query := PhysicsRayQueryParameters3D.create(eye, global_position)
-		query.exclude = [player.get_rid()]
-		var hit := get_world_3d().direct_space_state.intersect_ray(query)
-		if not hit.is_empty() and hit.collider != self:
-			return false
-	return true
+func _holder_peer_id(holder: Node) -> int:
+	if holder == null:
+		return 1
+	var id := str(holder.name).to_int()
+	return id if id != 0 else 1
 
-@rpc("any_peer", "call_local", "reliable")
-func request_use() -> void:
-	if not multiplayer.is_server() or holder_id != 0:
-		return
-	var who := _sender()
-	if not _can_reach(who):
-		return
-	if not can_pick_up:
-		_push(who)
-		return
-	if held_by(get_tree(), who) != null:
-		_notice.rpc_id(who, "One hand, one object. Press G to drop it first.")
-		return
-	_charge_started = -1
-	_sync_holder.rpc(who, global_position, global_basis.get_rotation_quaternion())
-
-@rpc("any_peer", "call_local", "reliable")
-func request_push() -> void:
-	if multiplayer.is_server() and holder_id == 0 and _can_reach(_sender(), false):
-		_push(_sender())
-
-func _push(who: int) -> void:
-	var now := Time.get_ticks_msec()
-	if now - _last_push < 180:
-		return
-	_last_push = now
-	var player := _player(who)
-	var direction: Vector3 = global_position - player.global_position
-	direction.y = 0.0
-	apply_central_impulse(direction.normalized() * mass * 2.2)
-
-@rpc("any_peer", "call_local", "reliable")
-func request_charge() -> void:
-	if multiplayer.is_server() and holder_id == _sender() and holder_id != 0 and _charge_started < 0:
-		_charge_started = Time.get_ticks_msec()
-
-@rpc("any_peer", "call_local", "reliable")
-func request_release(throwing: bool) -> void:
-	if not multiplayer.is_server() or holder_id == 0 or holder_id != _sender():
-		return
-	if throwing and _charge_started < 0:
-		return
-	_release(throwing)
-
-func _release(throwing: bool) -> void:
-	var player := _player(holder_id)
-	var direction: Vector3 = Vector3.FORWARD if player == null else -player.head.global_basis.z
-	var speed := throw_speed((Time.get_ticks_msec() - _charge_started) / 1000.0) if throwing else 0.0
-	_charge_started = -1
-	_sync_holder.rpc(0, global_position, global_basis.get_rotation_quaternion())
-	linear_velocity = direction * speed
-	angular_velocity = Vector3(2, 1, 0) if throwing else Vector3.ZERO
-	sleeping = false
-
-func drop_for_transition(who: int) -> void:
-	if multiplayer.is_server() and holder_id == who:
-		_release(false)
-
-func _peer_left(who: int) -> void:
-	drop_for_transition(who)
-
-func _send_initial(who: int) -> void:
-	if multiplayer.is_server():
-		_sync_holder.rpc_id(who, holder_id, global_position, global_basis.get_rotation_quaternion())
-
-@rpc("authority", "call_local", "reliable")
-func _sync_holder(who: int, pos: Vector3, rot: Quaternion) -> void:
-	holder_id = who
-	freeze = who != 0 or not multiplayer.is_server()
-	collision_layer = 1 if who == 0 else 0
-	collision_mask = 1 if who == 0 else 0
-	global_position = pos
-	quaternion = rot
-	_net_position = pos
-	_net_rotation = rot
-	linear_velocity = Vector3.ZERO
-	angular_velocity = Vector3.ZERO
-
-@rpc("authority", "call_remote", "unreliable_ordered")
-func _sync_motion(pos: Vector3, rot: Quaternion) -> void:
-	_net_position = pos
-	_net_rotation = rot
-
-@rpc("authority", "call_local", "reliable")
-func _notice(message: String) -> void:
-	var player := _player(multiplayer.get_unique_id())
-	if player != null:
-		player.show_notice(message)
-
-func reset_prop() -> void:
-	_charge_started = -1
-	_sync_holder(0, _home.origin, _home.basis.get_rotation_quaternion())
-	sleeping = false
-
-func _physics_process(delta: float) -> void:
-	if holder_id != 0:
-		var player := _player(holder_id)
-		if player != null:
-			var eye: Vector3 = player.head.global_position
-			var target: Vector3 = player.head.to_global(Vector3(0.38, -0.28, -0.85))
-			var query := PhysicsRayQueryParameters3D.create(eye, target)
-			query.exclude = [player.get_rid(), get_rid()]
-			var hit := get_world_3d().direct_space_state.intersect_ray(query)
-			global_position = target if hit.is_empty() else hit.position + hit.normal * 0.25
-			global_basis = player.head.global_basis
-	elif not multiplayer.is_server():
-		freeze = true
-		global_position = global_position.lerp(_net_position, minf(delta * 18.0, 1.0))
-		quaternion = quaternion.slerp(_net_rotation, minf(delta * 18.0, 1.0))
-	if multiplayer.is_server():
-		if global_position.y < -10.0:
-			_sync_holder.rpc(0, _home.origin, _home.basis.get_rotation_quaternion())
-		_snapshot_time += delta
-		if _snapshot_time >= 1.0 / 15.0:
-			_snapshot_time = 0.0
-			_sync_motion.rpc(global_position, global_basis.get_rotation_quaternion())
+func _player_node(id: int) -> Node:
+	var world := get_tree().get_first_node_in_group("game_world")
+	return world.get_node_or_null("Players/" + str(id)) if world != null else null

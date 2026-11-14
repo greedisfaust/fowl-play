@@ -101,13 +101,20 @@ func update_focus(prompt: String, held: String, charge: float, active: bool) -> 
 	if Time.get_ticks_msec() < _notice_until:
 		_prompt.text = _notice
 	_inventory.visible = not reading
-	_inventory.text = "HAND: EMPTY  |  E - pick up / interact" if held == "" else "HOLDING: %s  |  G - drop  |  hold RMB, release - throw" % held
+	_inventory.text = "HAND: EMPTY  |  E - pick up / interact" if held == "" else "HOLDING: %s  |  G - drop  |  Q or RMB, release - throw" % held
 	_charge.visible = charge >= 0.0 and not reading
 	_charge.value = charge * 100.0
 
 func notice(message: String) -> void:
 	_notice = message
 	_notice_until = Time.get_ticks_msec() + 2200
+
+var _shake_until := 0.0
+var _shake_intensity := 1.0
+
+func shake_screen(intensity: float) -> void:
+	_shake_intensity = clampf(intensity, 0.0, 2.0)
+	_shake_until = Time.get_ticks_msec() / 1000.0 + 0.25
 
 func show_lore(title: String, body: String) -> void:
 	reading = true

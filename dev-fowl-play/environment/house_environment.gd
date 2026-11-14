@@ -20,20 +20,19 @@ void fragment() {
 	ROUGHNESS = marble ? 0.28 : 0.92;
 }
 """
-var _world: Node3D
-var _props: Node3D
+var _world: Node3D = null
+var _props: Node3D = null
 
 func _ready() -> void:
 	_world = get_parent()
 	_props = Node3D.new()
 	_props.name = "Props"
 	add_child(_props)
-	_apartment()
 	_casino()
 	_rest()
 	_sky()
 
-func _material(color: Color, emission := false) -> StandardMaterial3D:
+func _material(color: Color, emission: bool = false) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
 	material.roughness = 0.75
@@ -182,7 +181,7 @@ func _prop(item_name: String, pos: Vector3, size: Vector3, color: Color, pickup 
 	prop.name = "Prop%02d" % _props.get_child_count()
 	prop.item_name = item_name
 	prop.can_pick_up = pickup
-	prop.mass = 0.6 if pickup else 4.0
+	prop.mass = PhysicsTuning.PROP_MASS_KG if pickup else PhysicsTuning.LARGE_PROP_MASS_KG
 	prop.position = pos
 	var collision := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
@@ -253,51 +252,6 @@ func _notice(room: Node3D, title: String, short_text: String, body: String, pos:
 	plaque.add_child(collision)
 	_text(plaque, title + "\n\n" + short_text + "\n\n[E] READ", Vector3(0, 0, 0.03), 25, Color("26352e"))
 
-func _apartment() -> void:
-	var room: Node3D = _world.get_node("Apartment")
-	_remove_walls(room)
-	_floor(room, Color("675745"))
-	_shell(room, 12, 12, 3.4, 0)
-	_text(room, "APARTMENT 4B", Vector3(0, 2.9, -5.8), 115, Color("d8d0b2"))
-	_text(room, "Four names. One overdue lease.", Vector3(0, 2.47, -5.8), 40, Color("c4baa0"))
-	_furniture(room, "bedSingle", Vector3(-4.8, 0, 2.4), 0.65, Vector3(1.3, 0.45, 2.0), PI / 2)
-	_furniture(room, "loungeSofa", Vector3(-4.8, 0, -0.2), 0.85, Vector3(2.0, 0.65, 0.8), PI / 2)
-	# A boarded pane, patched upholstery, torn rug and water damage precede the notices.
-	for y in [1.4, 2.1]:
-		var board := _box(room, Vector3(0.07, 0.16, 3.0), Vector3(5.78, y, 0), Color("6c5942"))
-		board.rotation.x = 0.14 if y < 2 else -0.1
-	_box(room, Vector3(0.045, 0.27, 0.38), Vector3(-4.35, 0.68, 0.3), Color("8c886b"), false)
-	for i in 4:
-		_box(room, Vector3(0.02, 0.04, 0.12), Vector3(-4.32, 0.62 + i * 0.05, 0.34), Color("c7bca0"), false)
-	for i in 6:
-		_box(room, Vector3(0.34, 0.015, 1.8 - float(i % 3) * 0.14), Vector3(-2.5 + i * 0.34, 0.012, 2.5), Color("555944") if i % 2 == 0 else Color("686048"), false)
-	for i in 7:
-		var paper := _box(room, Vector3(0.21, 0.012, 0.28), Vector3(3.4 + sin(i * 2.0) * 0.6, 0.02, 1.1 + i * 0.2), Color("c2b68d"), false)
-		paper.rotation.y = i * 0.67
-	_furniture(room, "tableCoffee", Vector3(-3.6, 0, -0.6), 0.5, Vector3(1.3, 0.5, 0.7))
-	_asset(room, "lampRoundFloor", Vector3(-5.0, 0, -2.0), 1.5)
-	_asset(room, "ceilingFan", Vector3(0, 3.1, 0), 0.22)
-	_light(room, Vector3(-2, 2.8, -1), Color("eac28a"), 1.5, 10)
-	_light(room, Vector3(4, 2.5, 2), Color("8da3b0"), 0.7, 8)
-	for i in 5:
-		var x := 4.0 + float(i % 2) * 0.6
-		var z := 2.8 + float(i / 2) * 0.65
-		_prop("Moving box", room.position + Vector3(x, 0.26, z), Vector3(0.48, 0.5, 0.48), Color("a58859"), true, "cardboardBoxClosed")
-	_prop("Old chair", room.position + Vector3(-2.8, 0.5, 0.8), Vector3(0.55, 1.0, 0.55), Color.WHITE, false, "chair")
-	_prop("Last clean cup", room.position + Vector3(-3.6, 0.63, -0.6), Vector3(0.15, 0.22, 0.15), Color("e0d3b3"))
-	_prop("Empty takeaway carton", room.position + Vector3(1.5, 0.14, 2), Vector3(0.3, 0.25, 0.24), Color("bd6b47"))
-	_prop("Battered radio", room.position + Vector3(-3.1, 0.67, -0.6), Vector3(0.25, 0.3, 0.18), Color.WHITE, true, "radio")
-	_prop("Threadbare pillow", room.position + Vector3(-4.5, 0.55, 2.4), Vector3(0.5, 0.18, 0.35), Color.WHITE, true, "pillow")
-	for i in 9:
-		var stain := _box(room, Vector3(0.3 + (i % 3) * 0.2, 0.2 + (i % 4) * 0.1, 0.012), Vector3(-5.1 + i * 1.15, 0.6 + (i % 3) * 0.3, -5.86), Color("555b4d"), false)
-		stain.rotation.z = (i % 3 - 1) * 0.17
-	# Split wallpaper strips and patches tell the story without covering terminals.
-	for i in 6:
-		_box(room, Vector3(0.02, 0.6, 0.035), Vector3(5.86, 0.6 + i * 0.1, 3.3 + i * 0.12), Color("3c403a"), false).rotation.x = -0.4
-	_notice(room, "FINAL RENT NOTICE", "3 MONTHS OVERDUE\nPlease leave the keys.", "Four tenants. Three missed payments. The landlord has stopped answering.\n\nSomeone circled a free-wings coupon on the back of this notice. There is no food left in the cupboards.\n\nWASD to move, mouse to look, Space to jump. Aim at objects: a warm outline and [E] prompt mark what you can use.", Vector3(5.82, 1.8, -3.6), -PI / 2)
-	_notice(room, "FREE WINGS FOR LIFE*", "*Please read the small print.\nOne signature feeds four.", "THE HOUSE welcomes every hungry friend. Everyone who ate shares one wallet and one debt.\n\nChoose your name and color at the terminals. Play alone, CREATE a LAN lobby, or enter a host IP to JOIN.\n\nAll connected friends must board the lift and press its button to accept the contract. The House is waiting downstairs.", Vector3(-5.82, 1.8, -3.5), PI / 2)
-	_notice(room, "PACKING LIST", "One hand. Travel light.\nDo not throw the good cups.", "The movers never came. Carry what you can.\n\nE or left click picks up a small object. You can carry ONE object. G drops it.\n\nHold RIGHT MOUSE to wind up; release to throw. The meter fills in 1.25 seconds. A tap tosses gently. Push larger furniture by walking into it or pressing E.\n\nLoose belongings stay behind when the lift takes you to another room.", Vector3(5.82, 1.8, 3.7), -PI / 2)
-
 func _casino() -> void:
 	var room: Node3D = _world.get_node("Casino")
 	_floor(room, Color("b3ada0"), true)
@@ -308,18 +262,14 @@ func _casino() -> void:
 	cards.position = Vector3(5, 0.5, 4)
 	cross.rotation.y = PI
 	cards.rotation.y = PI
-	var poker: Node3D = room.get_node("Poker")
-	poker.position = Vector3(-7.5, 0.5, -6)
-	poker.rotation.y = PI
-	for table in [cross, cards]:
-		table.get_node("Counter").material_override = _material(Color("43212b"))
+	var poker: Node3D = room.get_node_or_null("Poker")
+	if poker != null:
+		poker.position = Vector3(-7.5, 0.5, -6)
+		poker.rotation.y = PI
+		poker.get_node("Counter").material_override = _material(Color("43212b"))
 		for side in [-1.0, 1.0]:
-			_box(table, Vector3(0.025, 0.035, 1.6), Vector3(side * 1.49, 0.93, 0), BRASS, false)
-			_box(table, Vector3(3, 0.035, 0.025), Vector3(0, 0.93, side * 0.79), BRASS, false)
-	poker.get_node("Counter").material_override = _material(Color("43212b"))
-	for side in [-1.0, 1.0]:
-		_box(poker, Vector3(0.025, 0.035, 1.6), Vector3(side * 2.49, 0.93, 0), BRASS, false)
-		_box(poker, Vector3(5, 0.035, 0.025), Vector3(0, 0.93, side * 0.79), BRASS, false)
+			_box(poker, Vector3(0.025, 0.035, 1.6), Vector3(side * 2.49, 0.93, 0), BRASS, false)
+			_box(poker, Vector3(5, 0.035, 0.025), Vector3(0, 0.93, side * 0.79), BRASS, false)
 	_box(room, Vector3(4.4, 0.035, 27), Vector3(0, 0.52, -0.5), Color("622b38"), false)
 	for side in [-1.0, 1.0]:
 		_box(room, Vector3(0.04, 0.04, 27), Vector3(side * 2.2, 0.53, -0.5), BRASS, false)

@@ -9,6 +9,7 @@ size = Vector3(0.3, 0.1, 0.3)
 size = Vector3(0.3, 0.1, 0.3)
 
 [node name="PressButton" type="StaticBody3D" unique_id=1972899865]
+collision_layer = 2
 script = ExtResource("1_ofm47")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=1683927625]

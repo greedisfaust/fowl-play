@@ -70,7 +70,10 @@ func _make_key(text: String, op: String, arg: int, color: Color, key_size: Vecto
 	key.label_font_size = 28
 	key.pressed.connect(func(_v: int) -> void: key_pressed.emit(op, arg))
 	add_child(key)
-	
+	# Expose the single Interactable contract (R1).
+	var interactable := Interactable.new()
+	interactable.kind = Interactable.Kind.USE
+	key.add_child(interactable)	
 
 func show_bet(bet: int, min_bet: int, max_bet: int, locked: bool) -> void:
 	if _screen == null:

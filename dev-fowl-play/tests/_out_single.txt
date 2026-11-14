@@ -1,0 +1,11 @@
+﻿godot.windows.opt.tools.64.exe : WARNING: PlayerState: illegal transition 1 -> 4
+At line:4 char:1
++ & $Godot --headless --path $Path --scene res://tests/test_house.tscn  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: Player...ansition 1 -> 4:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   at: push_warning (core/variant/variant_utility.cpp:1033)
+   GDScript backtrace (most recent call first):
+       [0] transition_to (res://player/player_state.gd:86)
+       [1] _ready (res://tests/test_house.gd:200)

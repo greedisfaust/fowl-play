@@ -3,12 +3,9 @@
 [ext_resource type="Script" uid="uid://boyxfojgaqe8t" path="res://world.gd" id="1_tlwt5"]
 [ext_resource type="PackedScene" uid="uid://dap7heusvq3fc" path="res://ui/hud.tscn" id="2_aqk2v"]
 [ext_resource type="PackedScene" uid="uid://1vkhxbv1uo10" path="res://tables/chicken_cross/chicken_cross.tscn" id="3_036b0"]
-[ext_resource type="PackedScene" uid="uid://ckfabxbl2tc7x" path="res://lobby/text_terminal.tscn" id="4_aqk2v"]
 [ext_resource type="PackedScene" uid="uid://yts8y1ieyhvd" path="res://tables/screen_3d.tscn" id="4_dwbse"]
-[ext_resource type="PackedScene" uid="uid://datx111tb4hvp" path="res://lobby/lobby_console.tscn" id="5_036b0"]
-[ext_resource type="PackedScene" path="res://tables/poker/poker.tscn" id="7_ic0uy"]
+[ext_resource type="PackedScene" uid="uid://bp17rwff32xha" path="res://rooms/apartment.tscn" id="4_gbfbk"]
 [ext_resource type="PackedScene" uid="uid://d3c6fhjpfj2yn" path="res://elevator/elevator.tscn" id="7_pkg7o"]
-[ext_resource type="PackedScene" uid="uid://c5rb5nb3dfhwl" path="res://lobby/color_board.tscn" id="9_ioo17"]
 [ext_resource type="PackedScene" path="res://tables/cluckjack/cluckjack.tscn" id="10_cluckjack"]
 [ext_resource type="Script" uid="uid://b5v8njej3yrd4" path="res://environment/house_environment.gd" id="11_house"]
 
@@ -68,6 +65,8 @@ script = ExtResource("11_house")
 _spawnable_scenes = PackedStringArray("uid://bj0yo0ekojx8d")
 spawn_path = NodePath("../Players")
 
+[node name="Apartment" parent="." unique_id=1553227481 instance=ExtResource("4_gbfbk")]
+
 [node name="Casino" type="Node3D" parent="." unique_id=408274655]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 100, 0, 0)
 
@@ -91,77 +90,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0.2, 0)
 
 [node name="Elevator" parent="Casino" unique_id=1319015752 instance=ExtResource("7_pkg7o")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, -18.9)
-
-[node name="Poker" parent="Casino" unique_id=492488216 instance=ExtResource("7_ic0uy")]
-seat_count = 4
-
-[node name="Apartment" type="Node3D" parent="." unique_id=694171853]
-
-[node name="PlayerBoard" parent="Apartment" unique_id=1645846508 instance=ExtResource("4_dwbse")]
-transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 5.87, 1.6, 0)
-panel_size = Vector2(1.4, 1)
-text_color = Color(1, 1, 1, 1)
-big_font_size = 44
-
-[node name="JoinTerminal" parent="Apartment" unique_id=368827690 instance=ExtResource("4_aqk2v")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.8, 1.3, -5.8)
-title = "JOIN: HOST IP"
-max_length = 15
-allowed_chars = "0123456789."
-
-[node name="LobbyConsole" parent="Apartment" unique_id=853988978 instance=ExtResource("5_036b0")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.5, 1.4, -5.86)
-
-[node name="Floor" type="CSGBox3D" parent="Apartment" unique_id=341239197]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
-material_override = SubResource("StandardMaterial3D_tlwt5")
-use_collision = true
-size = Vector3(12, 0.2, 12)
-
-[node name="WallN" type="CSGBox3D" parent="Apartment" unique_id=735757054]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -6)
-material_override = SubResource("StandardMaterial3D_aqk2v")
-use_collision = true
-size = Vector3(12, 3, 0.2)
-
-[node name="WallS" type="CSGBox3D" parent="Apartment" unique_id=1447177250]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 6)
-material_override = SubResource("StandardMaterial3D_036b0")
-use_collision = true
-size = Vector3(12, 3, 0.2)
-
-[node name="CSGBox3D" type="CSGBox3D" parent="Apartment/WallS" unique_id=394522711]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
-operation = 2
-size = Vector3(7.9, 3.2, 0.4)
-
-[node name="WallE" type="CSGBox3D" parent="Apartment" unique_id=92483983]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 1.5, 0)
-material_override = SubResource("StandardMaterial3D_dwbse")
-use_collision = true
-size = Vector3(0.2, 3, 12)
-
-[node name="WallW" type="CSGBox3D" parent="Apartment" unique_id=760298657]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 1.5, 0)
-material_override = SubResource("StandardMaterial3D_pkg7o")
-use_collision = true
-size = Vector3(0.2, 3, 12)
-
-[node name="OmniLight3D" type="OmniLight3D" parent="Apartment" unique_id=1130347266]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, 0)
-omni_range = 14.0
-
-[node name="Spawn" type="Marker3D" parent="Apartment" unique_id=1390870382]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.1, 0)
-
-[node name="NicknameTerminal" parent="Apartment" unique_id=499022950 instance=ExtResource("4_aqk2v")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 1.3, -5.8)
-
-[node name="Elevator" parent="Apartment" unique_id=351637617 instance=ExtResource("7_pkg7o")]
-transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 9.85)
-
-[node name="ColorBoard" parent="Apartment" unique_id=557179741 instance=ExtResource("9_ioo17")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 0.85, -5.86)
 
 [node name="Rest" type="Node3D" parent="." unique_id=1476281762]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 50, 0, 0)

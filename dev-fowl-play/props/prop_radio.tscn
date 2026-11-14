@@ -1,0 +1,20 @@
+[gd_scene format=3 uid="uid://dtodiv7tj36dh"]
+
+[ext_resource type="PackedScene" uid="uid://btc6fb15a0wuu" path="res://props/base_prop.tscn" id="1_hnc77"]
+[ext_resource type="PropProfile" path="res://resources/profiles/light_prop.tres" id="2_2ky32"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_lvcqg"]
+size = Vector3(0.3, 0.16, 0.11)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tktbv"]
+size = Vector3(0.3, 0.16, 0.11)
+
+[node name="BaseProp" unique_id=234114675 instance=ExtResource("1_hnc77")]
+item_name = "Radio"
+profile = ExtResource("2_2ky32")
+
+[node name="CollisionShape3D" parent="." index="0" unique_id=2038312627]
+shape = SubResource("BoxShape3D_lvcqg")
+
+[node name="PropMesh" parent="." index="1" unique_id=808986147]
+mesh = SubResource("BoxMesh_tktbv")

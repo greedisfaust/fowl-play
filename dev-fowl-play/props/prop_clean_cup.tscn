@@ -1,0 +1,22 @@
+[gd_scene format=3 uid="uid://bl8qp3warav38"]
+
+[ext_resource type="PackedScene" uid="uid://btc6fb15a0wuu" path="res://props/base_prop.tscn" id="1_ybc0o"]
+[ext_resource type="PropProfile" path="res://resources/profiles/light_prop.tres" id="2_4c4u5"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_4c4u5"]
+size = Vector3(0.18, 0.3, 0.18)
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_jwsgm"]
+top_radius = 0.075
+bottom_radius = 0.06
+height = 0.22
+
+[node name="BaseProp" unique_id=234114675 instance=ExtResource("1_ybc0o")]
+item_name = "Cup"
+profile = ExtResource("2_4c4u5")
+
+[node name="CollisionShape3D" parent="." index="0" unique_id=2038312627]
+shape = SubResource("BoxShape3D_4c4u5")
+
+[node name="PropMesh" parent="." index="1" unique_id=808986147]
+mesh = SubResource("CylinderMesh_jwsgm")

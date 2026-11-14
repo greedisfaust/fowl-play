@@ -110,6 +110,11 @@ func _on_peer_connected(id: int) -> void:
 	players[id] = _free_slot()
 	colors[id] = _free_color()
 	_sync_roster.rpc(players, names, colors)
+	# Prop state sync: host sends now (backup) and client re-requests after load
+	# (primary). Retry on increasing delays so the sync lands after all room
+	# nodes are instantiated and props are in the physics_props group.
+	for delay in [0.5, 1.5, 3.0]:
+		get_tree().create_timer(delay).timeout.connect(func(): CarryRegistry._send_prop_state_to_peer(id))
 
 func _on_peer_disconnected(id: int) -> void:
 	if not multiplayer.is_server():

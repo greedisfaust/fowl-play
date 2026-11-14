@@ -1,5 +1,6 @@
 [gd_scene format=3 uid="uid://bj0yo0ekojx8d"]
 
+[ext_resource type="Script" uid="uid://cwj1iux66bgjr" path="res://autoload/body_phys.gd" id="1_bp"]
 [ext_resource type="Script" uid="uid://c3lsnsr7gf14f" path="res://player/player.gd" id="1_oul6g"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g4v7s"]
@@ -19,7 +20,16 @@ albedo_color = Color(0.9098039, 0.5411765, 0.65882355, 1)
 radius = 0.4
 height = 1.8
 
+[sub_resource type="PhysicsMaterial" id="PhysicsMaterial_g4v7s"]
+friction = 0.9
+bounce = 0.05
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_57qmd"]
+radius = 0.4
+height = 1.8
+
 [node name="Player" type="CharacterBody3D" unique_id=746105556]
+collision_layer = 17
 script = ExtResource("1_oul6g")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2078849753]
@@ -33,6 +43,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
 
 [node name="RayCast3D" type="RayCast3D" parent="Head/Camera3D" unique_id=1013007443]
 target_position = Vector3(0, 0, -3)
+collision_mask = 54
 
 [node name="Beak" type="MeshInstance3D" parent="Head" unique_id=267751298]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, -0.45)
@@ -49,3 +60,14 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.1, 0)
 billboard = 1
 font_size = 48
 outline_size = 6
+
+[node name="BodyPhys" type="RigidBody3D" parent="." unique_id=261385614]
+top_level = true
+collision_layer = 32
+collision_mask = 53
+physics_material_override = SubResource("PhysicsMaterial_g4v7s")
+script = ExtResource("1_bp")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="BodyPhys" unique_id=551946693]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("CapsuleShape3D_57qmd")

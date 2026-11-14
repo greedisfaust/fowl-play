@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://btc6fb15a0wuu"]
+
+[ext_resource type="Script" uid="uid://cgtydv1g0shri" path="res://interaction/physics_prop.gd" id="1_vjebb"]
+[ext_resource type="PropProfile" path="res://resources/prop_profile.tres" id="2_cbkc4"]
+
+[sub_resource type="BoxShape3D" id="shape_box"]
+size = Vector3(0.35, 0.35, 0.35)
+
+[sub_resource type="BoxMesh" id="mesh_box"]
+size = Vector3(0.35, 0.35, 0.35)
+
+[node name="BaseProp" type="RigidBody3D" unique_id=234114675]
+collision_layer = 4
+collision_mask = 53
+script = ExtResource("1_vjebb")
+item_name = "Prop"
+profile = ExtResource("2_cbkc4")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="." unique_id=2038312627]
+shape = SubResource("shape_box")
+
+[node name="PropMesh" type="MeshInstance3D" parent="." unique_id=808986147]
+mesh = SubResource("mesh_box")

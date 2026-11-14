@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="PropProfile" format=3 uid="uid://c7rjs7r26crtu"]
+
+[ext_resource type="Script" uid="uid://bykw12w51tiuj" path="res://scripts/prop_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weight_class = 2
+pickup_allowed = false
+throwable = false
+size_class = "large"

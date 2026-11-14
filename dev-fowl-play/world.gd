@@ -2,6 +2,7 @@ extends Node3D
 
 signal report_done
 
+const BODY_PHYS_SCENE := preload("res://autoload/body_phys.gd")  # must load before player.tscn
 const PLAYER_SCENE := preload("res://player/player.tscn")
 const FADE_TIME := 1.5
 
@@ -16,7 +17,18 @@ func _ready() -> void:
 	add_to_group("game_world")
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	multiplayer.connected_to_server.connect(func() -> void: $HUD.announce("JOINED THE LOBBY"))
+	multiplayer.connected_to_server.connect(func() -> void:
+		$HUD.announce("JOINED THE LOBBY")
+		# Request current prop state from the host once the room is loaded,
+		# so joining clients see props at their real positions. Retry on
+		# increasing delays so the sync lands after all room nodes are
+		# instantiated and props are in the physics_props group.
+		for delay in [1.0, 2.0, 4.0]:
+			get_tree().create_timer(delay).timeout.connect(func():
+				if not multiplayer.is_server():
+					CarryRegistry.request_prop_state_sync.rpc_id(1)
+			)
+	)
 	multiplayer.connection_failed.connect(_on_join_failed)
 	multiplayer.server_disconnected.connect(_on_host_left)
 	Network.players_changed.connect(_show_my_nickname)
@@ -90,6 +102,8 @@ func _on_host_left() -> void:
 	_go_solo()
 
 func _go_solo() -> void:
+	# Guaranteed carry cleanup on run reset.
+	CarryRegistry.on_run_reset()
 	for p in $Players.get_children():
 		$Players.remove_child(p)
 		p.queue_free()
@@ -109,8 +123,14 @@ func _on_peer_connected(id: int) -> void:
 
 func _on_peer_disconnected(id: int) -> void:
 	if multiplayer.is_server():
+		# Guaranteed carry cleanup: release what they held, clear held status.
+		CarryRegistry.on_holder_disconnect(id)
+		# Find the held node if they were being carried.
 		var p := $Players.get_node_or_null(str(id))
-		if p:
+		if p != null:
+			var held := p.get_node_or_null("BodyPhys")
+			# CarryRegistry.on_held_disconnect is called per held node; here we
+			# only need to release their hold (handled above). Clean up the node.
 			p.queue_free()
 
 func _remove_solo() -> Vector3:
@@ -207,9 +227,9 @@ func _ride(from: Elevator, forced := false) -> void:
 
 func _send_all_to(dest: Elevator) -> void:
 	dest.close_doors_instant.rpc()
+	# Guaranteed carry cleanup: release everything carried before the ride.
+	CarryRegistry.on_elevator_transition()
 	for id in Network.players:
-		for prop in get_tree().get_nodes_in_group("physics_props"):
-			prop.drop_for_transition(id)
 		var player = $Players.get_node_or_null(str(id))
 		if player:
 			var slot: int = Network.players[id]
